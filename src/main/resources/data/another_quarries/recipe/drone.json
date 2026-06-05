@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ADA",
+    "BCB",
+    "AAA"
+  ],
+  "key": {
+    "A": "#c:ingots/iron",
+    "B": "#c:gems/amethyst",
+    "C": "#another_quarries:quarry_eyes",
+    "D": "#c:dusts/redstone"
+  },
+  "result": {
+    "id": "another_quarries:drone",
+    "count": 1
+  }
+}

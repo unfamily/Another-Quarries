@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:smithing_transform",
+  "template": "minecraft:netherite_upgrade_smithing_template",
+  "base": "another_quarries:drill_diamond",
+  "addition": "#c:ingots/netherite",
+  "result": {
+    "id": "another_quarries:drill_netherite"
+  }
+}

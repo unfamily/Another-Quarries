@@ -38,9 +38,6 @@ public final class QuarryDrillAssigner {
         if (stack.is(ModItems.DRILL_NETHERITE.get())) {
             return 3;
         }
-        if (ModItems.isDrillLaser(stack)) {
-            return 4;
-        }
         if (stack.is(ModItems.DRILL_DIAMOND.get())) {
             return 2;
         }
@@ -53,9 +50,6 @@ public final class QuarryDrillAssigner {
         }
         if (stack.is(ModItems.DRILL_NETHERITE.get())) {
             return QuarryDrillType.NETHERITE;
-        }
-        if (ModItems.isDrillLaser(stack)) {
-            return QuarryDrillType.DRILL_LASER;
         }
         return QuarryDrillType.BASE;
     }

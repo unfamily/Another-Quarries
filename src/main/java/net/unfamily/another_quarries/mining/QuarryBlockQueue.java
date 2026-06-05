@@ -84,6 +84,11 @@ public final class QuarryBlockQueue {
                 0);
     }
 
+    /** True for the in-memory placeholder used before the first build or after NBT load. */
+    public boolean isPlaceholder() {
+        return quarryPos.equals(BlockPos.ZERO);
+    }
+
     private QuarryBlockQueue(
             BlockPos quarryPos,
             Direction facing,

@@ -11,7 +11,6 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
-import net.unfamily.another_quarries.block.entity.TrashCanBlockEntity;
 
 public final class ModBlockEntities {
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =
@@ -20,10 +19,6 @@ public final class ModBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<QuarryBlockEntity>> QUARRY_BE =
             BLOCK_ENTITIES.register("quarry",
                     () -> new BlockEntityType<>(QuarryBlockEntity::new, ModBlocks.QUARRY.get()));
-
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TrashCanBlockEntity>> TRASH_CAN_BE =
-            BLOCK_ENTITIES.register("trash_can",
-                    () -> new BlockEntityType<>(TrashCanBlockEntity::new, ModBlocks.TRASH_CAN.get()));
 
     public static void register(IEventBus eventBus) {
         BLOCK_ENTITIES.register(eventBus);
@@ -41,10 +36,6 @@ public final class ModBlockEntities {
                     Capabilities.Item.BLOCK,
                     QUARRY_BE.get(),
                     (be, side) -> be.getItemTransferHandler());
-            event.registerBlockEntity(
-                    Capabilities.Item.BLOCK,
-                    TRASH_CAN_BE.get(),
-                    (be, side) -> be.getItemHandler());
         }
     }
 

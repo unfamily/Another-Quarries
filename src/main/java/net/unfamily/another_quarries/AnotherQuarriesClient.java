@@ -3,7 +3,6 @@ package net.unfamily.another_quarries;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.item.ItemModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.client.resources.model.ModelDebugName;
 import net.minecraft.client.resources.model.sprite.Material;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.state.BlockState;
@@ -11,16 +10,15 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
-import net.unfamily.another_quarries.client.gui.QuarryScreen;
-import net.unfamily.another_quarries.registry.ModMenuTypes;
 import net.unfamily.another_quarries.client.CompositeGeometry;
+import net.unfamily.another_quarries.client.gui.QuarryScreen;
 import net.unfamily.another_quarries.client.structure.StructureQuarryBlockStateModel;
 import net.unfamily.another_quarries.client.structure.StructureQuarryItemModel;
 import net.unfamily.another_quarries.client.structure.StructureQuarryTextures;
 import net.unfamily.another_quarries.registry.ModBlocks;
+import net.unfamily.another_quarries.registry.ModMenuTypes;
 
 @Mod(value = AnotherQuarries.MOD_ID, dist = Dist.CLIENT)
 @EventBusSubscriber(modid = AnotherQuarries.MOD_ID, value = Dist.CLIENT)
@@ -31,12 +29,6 @@ public final class AnotherQuarriesClient {
             Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "block/structure_quarry_line");
     private static final Identifier ITEM_MODEL =
             Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "item/structure_quarry");
-    private static final ModelDebugName DEBUG_NAME = () -> "structure_quarry";
-
-    @SubscribeEvent
-    static void onClientSetup(FMLClientSetupEvent event) {
-        AnotherQuarries.LOGGER.debug("Client setup for {}", AnotherQuarries.MOD_ID);
-    }
 
     @SubscribeEvent
     static void onRegisterMenuScreens(RegisterMenuScreensEvent event) {

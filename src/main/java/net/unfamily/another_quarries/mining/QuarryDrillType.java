@@ -2,13 +2,10 @@ package net.unfamily.another_quarries.mining;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.unfamily.another_quarries.registry.ModItems;
-
 public enum QuarryDrillType {
     BASE(Items.IRON_PICKAXE, 1.0F, QuarryMiningLevels.TIER_IRON),
     DIAMOND(Items.DIAMOND_PICKAXE, 1.15F, QuarryMiningLevels.TIER_DIAMOND),
-    NETHERITE(Items.NETHERITE_PICKAXE, 1.25F, QuarryMiningLevels.TIER_NETHERITE),
-    DRILL_LASER(ModItems.DRILL_LASER.get(), 1.35F, QuarryMiningLevels.TIER_MODDED);
+    NETHERITE(Items.NETHERITE_PICKAXE, 1.25F, QuarryMiningLevels.TIER_NETHERITE);
 
     private final ItemStack toolTemplate;
     private final float speedMultiplier;

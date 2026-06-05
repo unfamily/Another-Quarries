@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " BA",
+    "BBB",
+    " B "
+  ],
+  "key": {
+    "A": "#c:ingots/iron",
+    "B": "#c:gems/diamond"
+  },
+  "result": {
+    "id": "another_quarries:drill_diamond",
+    "count": 1
+  }
+}

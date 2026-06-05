@@ -20,7 +20,6 @@ public final class ModCreativeModeTabs {
                     .displayItems((parameters, output) -> {
                         output.accept(ModItems.QUARRY.get());
                         output.accept(ModItems.DRONE.get());
-                        output.accept(ModItems.DRILL_LASER.get());
                         output.accept(ModItems.ARTIFICIAL_EYE.get());
                         output.accept(ModItems.DRILL_DIAMOND.get());
                         output.accept(ModItems.DRILL_NETHERITE.get());
@@ -29,7 +28,6 @@ public final class ModCreativeModeTabs {
                         output.accept(ModItems.MODULE_DIGGER.get());
                         output.accept(ModItems.MODULE_SILK_TOUCH.get());
                         output.accept(ModItems.MODULE_FORTUNE.get());
-                        output.accept(ModItems.TRASH_CAN.get());
                     })
                     .build());
 

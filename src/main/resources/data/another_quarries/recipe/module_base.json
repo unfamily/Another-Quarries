@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ABA",
+    "BCB",
+    "ABA"
+  ],
+  "key": {
+    "A": "#c:cobblestones/deepslate",
+    "B": "minecraft:flint",
+    "C": "#c:ingots/copper"
+  },
+  "result": {
+    "id": "another_quarries:module_base",
+    "count": 1
+  }
+}

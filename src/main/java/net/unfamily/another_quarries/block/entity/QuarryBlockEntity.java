@@ -34,6 +34,7 @@ import net.unfamily.another_quarries.registry.ModBlockEntities;
 import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.util.QuarryAreaLogic;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
+import net.unfamily.another_quarries.util.QuarryRedstoneUtil;
 import net.unfamily.iskalib.transfer.LegacyItemHandlerResourceHandler;
 import net.neoforged.neoforge.transfer.ResourceHandler;
 import net.neoforged.neoforge.transfer.item.ItemResource;
@@ -76,8 +77,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private boolean previewEnabled;
     private int redstoneMode;
     private QuarryDiggingMode diggingMode = QuarryDiggingMode.VOLUME;
-    private boolean pulsePreviousRedstone;
-    private boolean pulseEdgeAllowsWork;
     private boolean previousCanWork;
 
     private final ItemStackHandler bufferHandler;
@@ -213,11 +212,11 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public int getRedstoneMode() {
-        return Math.max(0, Math.min(redstoneMode, 4));
+        return normalizeRedstoneMode(redstoneMode);
     }
 
     public void setRedstoneMode(int mode) {
-        int newMode = Math.max(0, Math.min(mode, 4));
+        int newMode = normalizeRedstoneMode(mode);
         if (redstoneMode != newMode) {
             redstoneMode = newMode;
             setChanged();
@@ -225,12 +224,29 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public void cycleRedstoneMode() {
-        setRedstoneMode((getRedstoneMode() + 1) % 5);
+        int next = (getRedstoneMode() + 1) % 5;
+        if (next == 3) {
+            next = 4;
+        }
+        setRedstoneMode(next);
     }
 
     public void cycleRedstoneModeBackward() {
-        int mode = getRedstoneMode();
-        setRedstoneMode(mode == 0 ? 4 : mode - 1);
+        int prev = switch (getRedstoneMode()) {
+            case 0 -> 4;
+            case 1 -> 0;
+            case 2 -> 1;
+            case 4 -> 2;
+            default -> 0;
+        };
+        setRedstoneMode(prev);
+    }
+
+    private static int normalizeRedstoneMode(int mode) {
+        if (mode == 3) {
+            return 4;
+        }
+        return Math.max(0, Math.min(mode, 4));
     }
 
     public int getMaxBlockCount() {
@@ -238,15 +254,32 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public int getMaxHeight() {
-        return Math.max(MIN_HEIGHT_OR_DEPTH, getMaxBlockCount() - 1);
+        return Math.max(MIN_HEIGHT_OR_DEPTH, ModConfig.quarryMaxHeight() - 1);
     }
 
     public int getMaxDepth() {
-        return Math.max(MIN_HEIGHT_OR_DEPTH, getMaxBlockCount() - 1);
+        return Math.max(MIN_HEIGHT_OR_DEPTH, ModConfig.quarryMaxRange() - 1);
     }
 
     public int getMaxWidth() {
-        return Math.max(MIN_HEIGHT_OR_DEPTH, getMaxBlockCount() - 1);
+        return Math.max(MIN_HEIGHT_OR_DEPTH, ModConfig.quarryMaxRange() - 1);
+    }
+
+    private void clampSizes() {
+        sizeHeight = Math.max(MIN_HEIGHT_OR_DEPTH, Math.min(getMaxHeight(), sizeHeight));
+        sizeDepth = Math.max(MIN_HEIGHT_OR_DEPTH, Math.min(getMaxDepth(), sizeDepth));
+        sizeLeft = Math.max(0, sizeLeft);
+        sizeRight = Math.max(0, sizeRight);
+        int widthSum = sizeLeft + sizeRight;
+        int maxWidth = getMaxWidth();
+        if (widthSum > maxWidth) {
+            int excess = widthSum - maxWidth;
+            if (sizeLeft >= sizeRight) {
+                sizeLeft = Math.max(0, sizeLeft - excess);
+            } else {
+                sizeRight = Math.max(0, sizeRight - excess);
+            }
+        }
     }
 
     /** Direction: 0=up, 1=left, 2=right, 3=depth. */
@@ -284,35 +317,23 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
                 QuarryDrillAssigner.resolveDrill(equipmentHandler));
     }
 
-    public void updatePulseEdge() {
-        pulseEdgeAllowsWork = false;
-        if (redstoneMode != 3 || level == null || level.isClientSide()) {
-            return;
-        }
-        boolean sig = level.hasNeighborSignal(worldPosition);
-        pulseEdgeAllowsWork = sig && !pulsePreviousRedstone;
-        pulsePreviousRedstone = sig;
-    }
-
     public boolean canWork() {
-        if (redstoneMode == 3) {
-            return pulseEdgeAllowsWork;
+        if (level == null || level.isClientSide()) {
+            return getRedstoneMode() == 0;
         }
-        if (level == null) {
-            return true;
-        }
-        boolean sig = level.hasNeighborSignal(worldPosition);
-        return switch (redstoneMode) {
+        return switch (getRedstoneMode()) {
             case 0 -> true;
-            case 1 -> !sig;
-            case 2 -> sig;
+            case 1 -> !QuarryRedstoneUtil.hasRedstoneSignal(level, worldPosition);
+            case 2 -> QuarryRedstoneUtil.hasRedstoneSignal(level, worldPosition);
             case 4 -> false;
-            default -> true;
+            default -> false;
         };
     }
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, QuarryBlockEntity be) {
-        be.updatePulseEdge();
+        if (level.isClientSide()) {
+            return;
+        }
         if (!(level instanceof ServerLevel serverLevel)) {
             return;
         }
@@ -420,9 +441,10 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         sizeRight = input.getIntOr("SizeRight", DEFAULT_SIZE_RIGHT);
         sizeHeight = input.getIntOr("SizeHeight", DEFAULT_SIZE_HEIGHT);
         sizeDepth = input.getIntOr("SizeDepth", DEFAULT_SIZE_DEPTH);
+        clampSizes();
         previewEnabled = input.getBooleanOr("PreviewEnabled", false);
         diggingMode = QuarryDiggingMode.fromId(input.getIntOr("DiggingMode", QuarryDiggingMode.VOLUME.getId()));
-        redstoneMode = input.getIntOr("RedstoneMode", 0);
+        redstoneMode = normalizeRedstoneMode(input.getIntOr("RedstoneMode", 0));
         previousCanWork = input.getBooleanOr("PreviousCanWork", false);
         energyStorage.setEnergy(input.getIntOr("Energy", 0));
         int equipmentVersion = input.getIntOr("EquipmentVersion", 1);
@@ -432,14 +454,28 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             loadHandlerSlots(input, "Equipment", equipmentHandler);
         }
         loadHandlerSlots(input, "Buffer", bufferHandler);
+        migrateRemovedDrills(equipmentHandler);
         miningEngine.load(input);
         refreshEnergyCapacity();
+        if (level != null && !level.isClientSide()) {
+            previousCanWork = canWork();
+        }
     }
 
     private static void loadHandlerSlots(ValueInput input, String key, ItemStackHandler handler) {
         for (ItemStackWithSlot entry : input.listOrEmpty(key, ItemStackWithSlot.CODEC)) {
             if (entry.slot() >= 0 && entry.slot() < handler.getSlots()) {
                 handler.setStackInSlot(entry.slot(), entry.stack());
+            }
+        }
+    }
+
+    private static void migrateRemovedDrills(ItemStackHandler handler) {
+        for (int i = 0; i < handler.getSlots(); i++) {
+            ItemStack stack = handler.getStackInSlot(i);
+            ItemStack migrated = ModItems.migrateRemovedDrill(stack);
+            if (!ItemStack.matches(stack, migrated)) {
+                handler.setStackInSlot(i, migrated);
             }
         }
     }
@@ -501,7 +537,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
 
     private static ItemStack pickBestLegacyDrill(java.util.Map<Integer, ItemStack> bySlot, int fromVersion) {
         ItemStack netherite = ItemStack.EMPTY;
-        ItemStack laser = ItemStack.EMPTY;
         ItemStack diamond = ItemStack.EMPTY;
 
         java.util.List<ItemStack> candidates = new java.util.ArrayList<>();
@@ -531,8 +566,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             }
             if (ModItems.isNetheriteDrill(stack)) {
                 netherite = stack;
-            } else if (ModItems.isDrillLaser(stack)) {
-                laser = stack;
             } else if (ModItems.isDiamondDrill(stack)) {
                 diamond = stack;
             }
@@ -540,9 +573,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
 
         if (!netherite.isEmpty()) {
             return singleDrillStack(netherite);
-        }
-        if (!laser.isEmpty()) {
-            return singleDrillStack(laser);
         }
         if (!diamond.isEmpty()) {
             return singleDrillStack(diamond);
@@ -554,12 +584,9 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         if (stack.isEmpty()) {
             return ItemStack.EMPTY;
         }
-        if (ModItems.isAnyDrill(stack) || ModItems.isDrillLaser(stack)) {
+        stack = ModItems.migrateRemovedDrill(stack);
+        if (ModItems.isAnyDrill(stack)) {
             return stack.copy();
-        }
-        Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
-        if ("another_quarries".equals(id.getNamespace()) && "drone_laser".equals(id.getPath())) {
-            return new ItemStack(ModItems.DRILL_LASER.get(), stack.getCount());
         }
         return ItemStack.EMPTY;
     }

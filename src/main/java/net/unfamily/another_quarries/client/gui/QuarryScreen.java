@@ -142,7 +142,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         addRenderableWidget(diggingModeButton);
 
         redstoneButton = addRenderableWidget(MachineGuiButtons.redstoneIconButton(
-                leftPos + REDSTONE_X, topPos + REDSTONE_Y, b -> sendRedstone(false), menu::getRedstoneMode, true));
+                leftPos + REDSTONE_X, topPos + REDSTONE_Y, b -> sendRedstone(false), menu::getRedstoneMode, false));
 
         updateButtonTooltips();
         previewButtonShowsHide = menu.isPreviewEnabled();
@@ -383,7 +383,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private void renderButtonTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
         if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
             MachineGuiButtons.renderTooltipLine(guiGraphics, font, mouseX, mouseY,
-                    MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), true));
+                    MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), false));
         }
     }
 

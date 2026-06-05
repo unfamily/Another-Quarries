@@ -10,6 +10,7 @@ import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Block;
@@ -61,6 +62,11 @@ public final class QuarryBlock extends BaseEntityBlock {
         return defaultBlockState()
                 .setValue(HorizontalDirectionalBlock.FACING, context.getHorizontalDirection().getOpposite())
                 .setValue(STATE, QuarryState.OFF);
+    }
+
+    @Override
+    public boolean canConnectRedstone(BlockState state, BlockGetter level, BlockPos pos, @Nullable Direction direction) {
+        return direction != null;
     }
 
     @Override

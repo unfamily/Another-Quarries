@@ -15,6 +15,7 @@ import net.unfamily.another_quarries.registry.ModBlocks;
 import net.unfamily.another_quarries.util.QuarryAreaLogic;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -30,11 +31,6 @@ public final class QuarryFrameController {
         READY
     }
 
-    private enum ValidationStep {
-        FRAME,
-        STRAY
-    }
-
     private Phase phase = Phase.VALIDATING;
     private int frameSignature;
     private boolean skipped;
@@ -42,15 +38,10 @@ public final class QuarryFrameController {
     private final List<BlockPos> placeQueue = new ArrayList<>();
 
     private boolean validationActive;
-    private ValidationStep validationStep = ValidationStep.FRAME;
     private int validationIndex;
-    private Set<BlockPos> validFrameSet;
     private int validationFrameTotal;
-    private int validationStrayTotal;
-
-    private boolean placeScanActive;
-    private int placeScanIndex;
-    private int placeScanTotal;
+    /** Frame positions for post-clear placement; kept until READY. */
+    private Set<BlockPos> framePositions;
 
     public Phase getPhase() {
         return phase;
@@ -86,7 +77,7 @@ public final class QuarryFrameController {
         phase = Phase.VALIDATING;
         clearQueue.clear();
         placeQueue.clear();
-        resetPlaceScanState();
+        framePositions = null;
         beginValidationState();
     }
 
@@ -119,35 +110,18 @@ public final class QuarryFrameController {
             clearQueue.clear();
             placeQueue.clear();
             resetValidationState();
-            resetPlaceScanState();
+            framePositions = null;
             return;
         }
 
         skipped = false;
-        ensureValidationTotals(quarry, facing);
+        ensureValidationFrameTotal(quarry, facing);
 
-        int budget = ModConfig.frameValidationBlocksPerTick();
+        int remaining = validationFrameTotal - validationIndex;
+        int budget = ModConfig.frameValidationBlocksPerTick(remaining);
         int maxMiningLevel = QuarryDrillAssigner.resolveDrill(quarry.getEquipmentHandler()).maxMiningLevel();
 
-        if (validationStep == ValidationStep.FRAME) {
-            validationIndex = QuarryAreaLogic.forEachFrameStructureBlockSlice(
-                    quarry.getBlockPos(),
-                    facing,
-                    quarry.getSizeLeft(),
-                    quarry.getSizeRight(),
-                    quarry.getSizeHeight(),
-                    quarry.getSizeDepth(),
-                    validationIndex,
-                    budget,
-                    pos -> inspectFramePosition(level, pos, maxMiningLevel));
-            if (validationIndex >= validationFrameTotal) {
-                validationStep = ValidationStep.STRAY;
-                validationIndex = 0;
-            }
-            return;
-        }
-
-        validationIndex = QuarryAreaLogic.forEachBorderShellBlockSlice(
+        validationIndex = QuarryAreaLogic.forEachFrameStructureBlockSlice(
                 quarry.getBlockPos(),
                 facing,
                 quarry.getSizeLeft(),
@@ -156,60 +130,38 @@ public final class QuarryFrameController {
                 quarry.getSizeDepth(),
                 validationIndex,
                 budget,
-                pos -> inspectStrayPosition(level, pos));
-        if (validationIndex >= validationStrayTotal) {
+                pos -> inspectFramePosition(level, pos, maxMiningLevel));
+
+        if (validationIndex >= validationFrameTotal) {
             finishValidation();
         }
     }
 
-    public void tickPlaceScanIfNeeded(ServerLevel level, QuarryBlockEntity quarry, Direction facing) {
-        if (phase != Phase.CLEARING || !clearQueue.isEmpty()) {
-            return;
-        }
-
-        if (!placeScanActive) {
-            placeScanActive = true;
-            placeScanIndex = 0;
-            placeScanTotal = QuarryAreaLogic.frameStructureBlockCount(
-                    quarry.getBlockPos(),
-                    facing,
-                    quarry.getSizeLeft(),
-                    quarry.getSizeRight(),
-                    quarry.getSizeHeight(),
-                    quarry.getSizeDepth());
-            return;
-        }
-
-        int budget = ModConfig.frameValidationBlocksPerTick();
-        placeScanIndex = QuarryAreaLogic.forEachFrameStructureBlockSlice(
-                quarry.getBlockPos(),
-                facing,
-                quarry.getSizeLeft(),
-                quarry.getSizeRight(),
-                quarry.getSizeHeight(),
-                quarry.getSizeDepth(),
-                placeScanIndex,
-                budget,
-                pos -> inspectPlacePosition(level, pos));
-        if (placeScanIndex >= placeScanTotal) {
-            resetPlaceScanState();
+    public void onClearQueueDrained() {
+        if (phase == Phase.CLEARING && clearQueue.isEmpty()) {
             advancePhaseFromQueues();
         }
     }
 
-    private void ensureValidationTotals(QuarryBlockEntity quarry, Direction facing) {
-        if (validFrameSet != null) {
+    public void notifyFrameCleared(Level level, BlockPos pos) {
+        if (framePositions == null || !framePositions.contains(pos)) {
             return;
         }
-        validFrameSet = QuarryAreaLogic.frameStructureBlockSet(
+        if (!level.getBlockState(pos).isAir()) {
+            return;
+        }
+        if (!placeQueue.contains(pos)) {
+            placeQueue.add(pos);
+        }
+    }
+
+    private void ensureValidationFrameTotal(QuarryBlockEntity quarry, Direction facing) {
+        if (validationFrameTotal > 0) {
+            return;
+        }
+        validationFrameTotal = QuarryAreaLogic.frameStructureBlockCount(
                 quarry.getBlockPos(),
                 facing,
-                quarry.getSizeLeft(),
-                quarry.getSizeRight(),
-                quarry.getSizeHeight(),
-                quarry.getSizeDepth());
-        validationFrameTotal = validFrameSet.size();
-        validationStrayTotal = QuarryAreaLogic.borderShellBlockCount(
                 quarry.getSizeLeft(),
                 quarry.getSizeRight(),
                 quarry.getSizeHeight(),
@@ -217,6 +169,11 @@ public final class QuarryFrameController {
     }
 
     private void inspectFramePosition(ServerLevel level, BlockPos pos, int maxMiningLevel) {
+        if (framePositions == null) {
+            framePositions = new HashSet<>();
+        }
+        framePositions.add(pos);
+
         if (!level.isLoaded(pos)) {
             return;
         }
@@ -233,28 +190,6 @@ public final class QuarryFrameController {
         placeQueue.add(pos);
     }
 
-    private void inspectStrayPosition(ServerLevel level, BlockPos pos) {
-        if (validFrameSet.contains(pos)) {
-            return;
-        }
-        if (!level.isLoaded(pos)) {
-            return;
-        }
-        if (level.getBlockState(pos).is(ModBlocks.STRUCTURE_QUARRY.get())) {
-            clearQueue.add(pos);
-        }
-    }
-
-    private void inspectPlacePosition(ServerLevel level, BlockPos pos) {
-        if (!level.isLoaded(pos)) {
-            return;
-        }
-        BlockState state = level.getBlockState(pos);
-        if (!state.is(ModBlocks.STRUCTURE_QUARRY.get()) && state.isAir()) {
-            placeQueue.add(pos);
-        }
-    }
-
     private void finishValidation() {
         resetValidationState();
         advancePhaseFromQueues();
@@ -267,12 +202,14 @@ public final class QuarryFrameController {
             phase = Phase.PLACING;
         } else {
             phase = Phase.READY;
+            framePositions = null;
         }
     }
 
     public void onPlaceFinished() {
         if (placeQueue.isEmpty()) {
             phase = Phase.READY;
+            framePositions = null;
         }
     }
 
@@ -349,26 +286,14 @@ public final class QuarryFrameController {
 
     private void resetValidationState() {
         validationActive = false;
-        validationStep = ValidationStep.FRAME;
         validationIndex = 0;
-        validFrameSet = null;
         validationFrameTotal = 0;
-        validationStrayTotal = 0;
-    }
-
-    private void resetPlaceScanState() {
-        placeScanActive = false;
-        placeScanIndex = 0;
-        placeScanTotal = 0;
     }
 
     private void beginValidationState() {
         validationActive = true;
-        validationStep = ValidationStep.FRAME;
         validationIndex = 0;
-        validFrameSet = null;
         validationFrameTotal = 0;
-        validationStrayTotal = 0;
     }
 
     public void save(ValueOutput output) {
@@ -389,7 +314,7 @@ public final class QuarryFrameController {
         clearQueue.clear();
         placeQueue.clear();
         resetValidationState();
-        resetPlaceScanState();
+        framePositions = null;
         if (!skipped && phase != Phase.READY) {
             phase = Phase.READY;
         }

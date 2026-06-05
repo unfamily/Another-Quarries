@@ -51,8 +51,12 @@ public final class ModConfig {
             .defineInRange("003_baseRange", 4, 1, 64);
 
     private static final ModConfigSpec.IntValue QUARRY_MAX_RANGE = BUILDER
-            .comment("Absolute max blocks per axis for the quarry area")
-            .defineInRange("004_maxRange", 256, 1, 256);
+            .comment("Max horizontal width and depth of the mining area in blocks (e.g. 128 = up to 128×128 footprint)")
+            .defineInRange("004_maxRange", 128, 1, 256);
+
+    private static final ModConfigSpec.IntValue QUARRY_MAX_HEIGHT = BUILDER
+            .comment("Max vertical height of the mining area in blocks")
+            .defineInRange("maxHeight", 64, 1, 256);
 
     private static final ModConfigSpec.IntValue BASE_BREAK_TICKS = BUILDER
             .comment("Base ticks to break one block with one worker and no speed modules (20 ticks = 1 second)")
@@ -80,9 +84,12 @@ public final class ModConfig {
 
     private static final ModConfigSpec.IntValue FRAME_VALIDATION_BLOCKS_PER_TICK = BUILDER
             .comment(
-                    "Block positions checked per tick during frame validation on reboot, power-on, or resize",
-                    "Mining waits until validation finishes; higher values finish faster but cost more TPS per tick")
-            .defineInRange("frameValidationBlocksPerTick", 128, 1, 4096);
+                    "Minimum block positions checked per tick during frame validation on reboot, power-on, or resize",
+                    "The quarry auto-scales upward so validation usually finishes within ~2 seconds")
+            .defineInRange("frameValidationBlocksPerTick", 256, 1, 4096);
+
+    /** Target ticks to complete a frame validation scan (~2 seconds at 20 TPS). */
+    private static final int FRAME_VALIDATION_TARGET_TICKS = 40;
 
     private static final ModConfigSpec.IntValue EQUIPMENT_GUI_COLUMNS = BUILDER
             .comment("Equipment row width in the quarry GUI background (drone + drill + 3 upgrade slots must fit)")
@@ -110,7 +117,7 @@ public final class ModConfig {
             .comment(
                     "Max horizontal width and depth (in blocks, height excluded) before auto-switching to chunk-by-chunk mining",
                     "Footprints up to this size on both axes use volume mode (e.g. 64x64 = 4096 blocks)")
-            .defineInRange("013_volumeModeMaxFootprint", 64, 4, 256);
+            .defineInRange("013_volumeModeMaxFootprint", 64, 4, 128);
 
     static {
         BUILDER.pop();
@@ -180,10 +187,6 @@ public final class ModConfig {
             .comment("Extra RF per block with a netherite drill installed")
             .defineInRange("1netherite_extraRf", 8, 0, Integer.MAX_VALUE);
 
-    private static final ModConfigSpec.IntValue DRILL_LASER_EXTRA_RF = BUILDER
-            .comment("Extra RF per block with a laser drill installed")
-            .defineInRange("2laser_extraRf", 12, 0, Integer.MAX_VALUE);
-
     static {
         BUILDER.pop();
     }
@@ -212,7 +215,7 @@ public final class ModConfig {
 
     private ModConfig() {}
 
-    /** Peak RF draw per game tick at configured max drones with max modules and laser drill. */
+    /** Peak RF draw per game tick at configured max drones with max modules and netherite drill. */
     public static int peakRfPerTickAtMaxLoad() {
         int logicalWorkers = 1 + maxDrones();
         int activeWorkers = Math.min(logicalWorkers, maxActiveMiningWorkers());
@@ -223,7 +226,7 @@ public final class ModConfig {
                 maxSpeedModules(),
                 maxFortuneModules(),
                 false,
-                QuarryDrillType.DRILL_LASER);
+                QuarryDrillType.NETHERITE);
         return blocksPerTick * maxRfPerBlock;
     }
 
@@ -324,6 +327,10 @@ public final class ModConfig {
         return QUARRY_MAX_RANGE.get();
     }
 
+    public static int quarryMaxHeight() {
+        return QUARRY_MAX_HEIGHT.get();
+    }
+
     public static int baseBreakTicks() {
         return BASE_BREAK_TICKS.get();
     }
@@ -364,6 +371,16 @@ public final class ModConfig {
 
     public static int frameValidationBlocksPerTick() {
         return FRAME_VALIDATION_BLOCKS_PER_TICK.get();
+    }
+
+    /** Scales validation throughput so large quarries finish in roughly {@link #FRAME_VALIDATION_TARGET_TICKS} ticks. */
+    public static int frameValidationBlocksPerTick(int remainingBlocks) {
+        int configured = FRAME_VALIDATION_BLOCKS_PER_TICK.get();
+        if (remainingBlocks <= 0) {
+            return configured;
+        }
+        int scaled = (remainingBlocks + FRAME_VALIDATION_TARGET_TICKS - 1) / FRAME_VALIDATION_TARGET_TICKS;
+        return Math.min(4096, Math.max(configured, scaled));
     }
 
     public static List<? extends String> miningDenyList() {
@@ -427,7 +444,6 @@ public final class ModConfig {
             case BASE -> 0;
             case DIAMOND -> DRILL_DIAMOND_EXTRA_RF.get();
             case NETHERITE -> DRILL_NETHERITE_EXTRA_RF.get();
-            case DRILL_LASER -> DRILL_LASER_EXTRA_RF.get();
         };
     }
 

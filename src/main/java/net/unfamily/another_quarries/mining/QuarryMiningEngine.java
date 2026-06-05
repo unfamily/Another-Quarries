@@ -100,7 +100,7 @@ public final class QuarryMiningEngine {
             progressed = tickFrameClear(level, tickCtx, ctx, reserved, rfPerBlock);
             frameController.pruneCompletedClearTargets(level);
             if (frameController.getClearQueue().isEmpty()) {
-                frameController.tickPlaceScanIfNeeded(level, quarry, facing);
+                frameController.onClearQueueDrained();
             }
         } else if (frameController.getPhase() == QuarryFrameController.Phase.PLACING) {
             progressed = tickFramePlace(level, reserved);
@@ -169,6 +169,7 @@ public final class QuarryMiningEngine {
                     continue;
                 }
                 if (frameController.removeFrameBlock(level, worker.target)) {
+                    frameController.notifyFrameCleared(level, worker.target);
                     releaseReservedTarget(reserved, worker);
                     worker.target = null;
                     worker.progress = 0;
@@ -201,7 +202,9 @@ public final class QuarryMiningEngine {
             }
 
             if (QuarryBlockBreaker.breakBlock(level, worker.target, ctx, tickCtx.buffer())) {
+                BlockPos cleared = worker.target;
                 quarry.getEnergyStorage().extractEnergy(rfPerBlock, false);
+                frameController.notifyFrameCleared(level, cleared);
                 releaseReservedTarget(reserved, worker);
                 worker.target = null;
                 worker.progress = 0;
@@ -461,7 +464,7 @@ public final class QuarryMiningEngine {
         Direction facing = state.getValue(HorizontalDirectionalBlock.FACING);
         int signature = hashSignature(facing);
 
-        if (queueBuilt && signature == queueSignature) {
+        if (queueBuilt && signature == queueSignature && !queue.isPlaceholder()) {
             int maxMiningLevel = QuarryDrillAssigner.resolveDrill(quarry.getEquipmentHandler()).maxMiningLevel();
             if (quarry.getDiggingMode() == QuarryDiggingMode.CHUNK
                     && queue.isCurrentChunkComplete(level, maxMiningLevel)
