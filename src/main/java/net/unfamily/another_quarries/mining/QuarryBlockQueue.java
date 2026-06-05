@@ -10,8 +10,10 @@ import net.unfamily.another_quarries.util.QuarryDiggingMode;
 
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -47,7 +49,23 @@ public final class QuarryBlockQueue {
     private int belowLayer;
     private int layerCursor;
     private List<BlockPos> currentLayerBlocks = List.of();
-    private final List<BlockPos> regenQueue = new ArrayList<>();
+    private final Deque<BlockPos> regenQueue = new ArrayDeque<>();
+
+    private enum RegenScanPhase {
+        VOLUME,
+        BELOW
+    }
+
+    private boolean regenScanActive;
+    private RegenScanPhase regenScanPhase;
+    private int regenScanVolumeDy;
+    private int regenScanMinVolumeDy;
+    private int regenScanMaxVolumeDy;
+    private int regenScanBelowLayer;
+    private int regenScanMaxBelowLayer;
+    private int regenScanLayerIndex;
+    private int regenScanBelowY;
+    private final Set<BlockPos> regenScanSeen = new HashSet<>();
 
     public static QuarryBlockQueue empty() {
         return new QuarryBlockQueue(
@@ -273,80 +291,141 @@ public final class QuarryBlockQueue {
         }
     }
 
-    public List<BlockPos> findRegeneratedBlocks(Level level) {
-        return findRegeneratedBlocks(level, QuarryMiningLevels.TIER_MODDED);
+    public boolean isRegenScanActive() {
+        return regenScanActive;
     }
 
-    public List<BlockPos> findRegeneratedBlocks(Level level, int maxMiningLevel) {
-        Set<BlockPos> seen = new HashSet<>();
-        List<BlockPos> found = new ArrayList<>();
+    public void beginRegenScan(int layerDepth) {
+        regenScanActive = true;
+        regenScanLayerIndex = 0;
+        regenScanSeen.clear();
+        regenScanSeen.addAll(regenQueue);
 
-        int minVolumeDy = phase == Phase.CLEAR_VOLUME ? volumeDy : 0;
-        for (int dy = sizeHeight; dy >= minVolumeDy; dy--) {
-            collectMineable(level, volumeLayerPositions(dy), seen, found, maxMiningLevel);
+        int depth = Math.max(1, layerDepth);
+        if (phase == Phase.CLEAR_VOLUME) {
+            regenScanPhase = RegenScanPhase.VOLUME;
+            regenScanMinVolumeDy = volumeDy;
+            regenScanMaxVolumeDy = Math.min(sizeHeight, volumeDy + depth);
+            regenScanVolumeDy = regenScanMaxVolumeDy;
+            regenScanMaxBelowLayer = -1;
+        } else {
+            regenScanPhase = RegenScanPhase.BELOW;
+            regenScanMaxBelowLayer = belowLayer;
+            regenScanBelowLayer = Math.max(0, belowLayer - depth);
+            regenScanBelowY = QuarryAreaLogic.belowVolumeStartY(quarryPos, facing) - regenScanBelowLayer;
+            regenScanMinVolumeDy = -1;
+            regenScanMaxVolumeDy = -1;
+            regenScanVolumeDy = -1;
+        }
+    }
+
+    /** Checks up to {@code budget} positions near the mining front; appends regen targets to the queue. */
+    public void advanceRegenScan(Level level, int maxMiningLevel, int budget) {
+        if (!regenScanActive || budget <= 0) {
+            return;
         }
 
-        if (phase == Phase.BELOW) {
-            int startY = QuarryAreaLogic.belowVolumeStartY(quarryPos, facing);
-            int minY = level.getMinY();
-            for (int layer = 0; layer <= belowLayer; layer++) {
-                int y = startY - layer;
-                if (y < minY) {
-                    break;
+        int remaining = budget;
+        boolean chunkFilter = mode == QuarryDiggingMode.CHUNK;
+
+        while (remaining > 0 && regenScanActive) {
+            if (regenScanPhase == RegenScanPhase.VOLUME) {
+                if (regenScanVolumeDy < regenScanMinVolumeDy) {
+                    regenScanActive = false;
+                    return;
                 }
-                collectMineable(level, belowLayerPositions(y), seen, found, maxMiningLevel);
-            }
-        }
-        return found;
-    }
 
-    private List<BlockPos> volumeLayerPositions(int dy) {
-        if (mode == QuarryDiggingMode.CHUNK) {
-            return QuarryAreaLogic.enumerateVolumeLayerAtDyInChunk(
-                    quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth,
-                    dy, activeChunkX, activeChunkZ);
-        }
-        return QuarryAreaLogic.enumerateVolumeLayerAtDy(
-                quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth, dy);
-    }
+                int before = regenScanLayerIndex;
+                regenScanLayerIndex = QuarryAreaLogic.forEachInteriorVolumeAtDySlice(
+                        quarryPos,
+                        facing,
+                        sizeLeft,
+                        sizeRight,
+                        sizeHeight,
+                        sizeDepth,
+                        regenScanVolumeDy,
+                        activeChunkX,
+                        activeChunkZ,
+                        chunkFilter,
+                        regenScanLayerIndex,
+                        remaining,
+                        pos -> considerRegenCandidate(level, pos, maxMiningLevel));
 
-    private List<BlockPos> belowLayerPositions(int y) {
-        if (mode == QuarryDiggingMode.CHUNK) {
-            return QuarryAreaLogic.enumerateBelowLayerAtYInChunk(
-                    quarryPos, facing, sizeLeft, sizeRight, sizeDepth, y, activeChunkX, activeChunkZ);
-        }
-        return QuarryAreaLogic.enumerateBelowLayerAtY(
-                quarryPos, facing, sizeLeft, sizeRight, sizeDepth, y);
-    }
-
-    private void collectMineable(
-            Level level,
-            List<BlockPos> positions,
-            Set<BlockPos> seen,
-            List<BlockPos> found,
-            int maxMiningLevel) {
-        for (BlockPos pos : positions) {
-            if (!isMineableChunkLoaded(level, pos)) {
+                remaining -= regenScanLayerIndex - before;
+                if (regenScanLayerIndex <= before) {
+                    regenScanVolumeDy--;
+                    regenScanLayerIndex = 0;
+                }
                 continue;
             }
-            if (QuarryMiningFilters.isMineable(level, pos, maxMiningLevel) && seen.add(pos)) {
-                found.add(pos);
+
+            if (regenScanBelowLayer > regenScanMaxBelowLayer) {
+                regenScanActive = false;
+                return;
             }
+
+            if (regenScanBelowY < level.getMinY()) {
+                regenScanActive = false;
+                return;
+            }
+
+            int before = regenScanLayerIndex;
+            regenScanLayerIndex = QuarryAreaLogic.forEachInteriorBelowAtYSlice(
+                    quarryPos,
+                    facing,
+                    sizeLeft,
+                    sizeRight,
+                    sizeDepth,
+                    regenScanBelowY,
+                    activeChunkX,
+                    activeChunkZ,
+                    chunkFilter,
+                    regenScanLayerIndex,
+                    remaining,
+                    pos -> considerRegenCandidate(level, pos, maxMiningLevel));
+
+            remaining -= regenScanLayerIndex - before;
+            if (regenScanLayerIndex <= before) {
+                regenScanBelowLayer++;
+                regenScanBelowY--;
+                regenScanLayerIndex = 0;
+            }
+        }
+    }
+
+    private void considerRegenCandidate(Level level, BlockPos pos, int maxMiningLevel) {
+        if (regenQueue.size() >= ModConfig.regenQueueMaxSize()) {
+            return;
+        }
+        if (!isMineableChunkLoaded(level, pos)) {
+            return;
+        }
+        if (level.isEmptyBlock(pos)) {
+            return;
+        }
+        if (QuarryMiningFilters.isMineable(level, pos, maxMiningLevel) && regenScanSeen.add(pos)) {
+            regenQueue.addLast(pos);
         }
     }
 
     public void setRegenQueue(List<BlockPos> blocks) {
         regenQueue.clear();
-        regenQueue.addAll(blocks);
+        int max = ModConfig.regenQueueMaxSize();
+        for (BlockPos pos : blocks) {
+            if (regenQueue.size() >= max) {
+                break;
+            }
+            regenQueue.addLast(pos);
+        }
     }
 
     public List<BlockPos> getRegenQueue() {
-        return regenQueue;
+        return new ArrayList<>(regenQueue);
     }
 
     private BlockPos takeNextRegenMineable(Level level, Set<BlockPos> reserved, int maxMiningLevel) {
         while (!regenQueue.isEmpty()) {
-            BlockPos pos = regenQueue.remove(0);
+            BlockPos pos = regenQueue.removeFirst();
             if (reserved.contains(pos)) {
                 continue;
             }

@@ -19,7 +19,6 @@ public final class ModCreativeModeTabs {
                     .icon(() -> new ItemStack(ModItems.QUARRY.get()))
                     .displayItems((parameters, output) -> {
                         output.accept(ModItems.QUARRY.get());
-                        output.accept(ModItems.STRUCTURE_QUARRY.get());
                         output.accept(ModItems.DRONE.get());
                         output.accept(ModItems.DRILL_LASER.get());
                         output.accept(ModItems.ARTIFICIAL_EYE.get());

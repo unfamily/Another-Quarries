@@ -18,6 +18,7 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
+import net.unfamily.another_quarries.network.packet.QuarryDiggingModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryPreviewToggleC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRebootC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRedstoneModeC2SPacket;
@@ -25,6 +26,7 @@ import net.unfamily.another_quarries.network.packet.QuarrySizeC2SPacket;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
 import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.registry.ModItems;
+import net.unfamily.another_quarries.util.QuarryDiggingMode;
 import net.unfamily.iskalib.client.marker.MarkRenderer;
 import org.lwjgl.glfw.GLFW;
 
@@ -133,11 +135,10 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         addRenderableWidget(buttonPreview);
 
         diggingModeButton = Button.builder(
-                        Component.translatable("gui.another_quarries.quarry.digging_mode.chunk"),
-                        b -> {})
+                        Component.translatable("gui.another_quarries.quarry.digging_mode.volume"),
+                        b -> sendDiggingModeToggle())
                 .bounds(leftPos + DIGGING_MODE_X, topPos + DIGGING_MODE_Y, DIGGING_MODE_W, BUTTON_H)
                 .build();
-        diggingModeButton.active = false;
         addRenderableWidget(diggingModeButton);
 
         redstoneButton = addRenderableWidget(MachineGuiButtons.redstoneIconButton(
@@ -170,10 +171,21 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (diggingModeButton == null) {
             return;
         }
-        diggingModeButton.setMessage(Component.translatable("gui.another_quarries.quarry.digging_mode.chunk"));
-        diggingModeButton.active = false;
-        diggingModeButton.setTooltip(Tooltip.create(
-                Component.translatable("gui.another_quarries.quarry.digging_mode.chunk.forced.tooltip")));
+        boolean forcedChunk = menu.requiresChunkDiggingMode();
+        diggingModeButton.active = !forcedChunk;
+
+        boolean chunkMode = menu.getDiggingModeId() == QuarryDiggingMode.CHUNK.getId();
+        if (chunkMode) {
+            diggingModeButton.setMessage(Component.translatable("gui.another_quarries.quarry.digging_mode.chunk"));
+            diggingModeButton.setTooltip(Tooltip.create(forcedChunk
+                    ? Component.translatable("gui.another_quarries.quarry.digging_mode.chunk.disabled.tooltip",
+                            ModConfig.volumeModeMaxFootprint())
+                    : Component.translatable("gui.another_quarries.quarry.digging_mode.chunk.tooltip")));
+        } else {
+            diggingModeButton.setMessage(Component.translatable("gui.another_quarries.quarry.digging_mode.volume"));
+            diggingModeButton.setTooltip(Tooltip.create(
+                    Component.translatable("gui.another_quarries.quarry.digging_mode.volume.tooltip")));
+        }
     }
 
     private void updatePreviewButtonLabel() {
@@ -254,6 +266,15 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
             return;
         }
         ClientPacketDistributor.sendToServer(new QuarryRebootC2SPacket(pos));
+        playButtonSound();
+    }
+
+    private void sendDiggingModeToggle() {
+        BlockPos pos = menu.getSyncedBlockPos();
+        if (pos.equals(BlockPos.ZERO)) {
+            return;
+        }
+        ClientPacketDistributor.sendToServer(new QuarryDiggingModeC2SPacket(pos));
         playButtonSound();
     }
 

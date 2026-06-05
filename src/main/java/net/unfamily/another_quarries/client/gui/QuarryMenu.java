@@ -316,7 +316,13 @@ public class QuarryMenu extends AbstractContainerMenu {
     }
 
     public boolean requiresChunkDiggingMode() {
-        return true;
+        if (blockEntity != null) {
+            return blockEntity.requiresChunkDiggingMode();
+        }
+        return QuarryAreaLogic.requiresChunkDiggingMode(
+                containerData.get(SIZE_LEFT_INDEX),
+                containerData.get(SIZE_RIGHT_INDEX),
+                containerData.get(SIZE_DEPTH_INDEX));
     }
 
     public int getEstimatedRfPerBlock() {

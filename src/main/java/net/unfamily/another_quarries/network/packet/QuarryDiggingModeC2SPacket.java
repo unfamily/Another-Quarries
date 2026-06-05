@@ -5,11 +5,13 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.unfamily.another_quarries.AnotherQuarries;
+import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 
-/** @deprecated Digging mode is now derived from quarry footprint size; packet is ignored. */
-@Deprecated
 public record QuarryDiggingModeC2SPacket(BlockPos pos) implements CustomPacketPayload {
 
     public static final Type<QuarryDiggingModeC2SPacket> TYPE = new Type<>(
@@ -25,6 +27,16 @@ public record QuarryDiggingModeC2SPacket(BlockPos pos) implements CustomPacketPa
     }
 
     public static void handle(QuarryDiggingModeC2SPacket packet, IPayloadContext context) {
-        // Digging mode is automatic from footprint size; manual toggle removed.
+        context.enqueueWork(() -> {
+            ServerPlayer player = (ServerPlayer) context.player();
+            ServerLevel level = (ServerLevel) player.level();
+            BlockEntity blockEntity = level.getBlockEntity(packet.pos());
+            if (!(blockEntity instanceof QuarryBlockEntity quarry)) {
+                return;
+            }
+            if (!quarry.requiresChunkDiggingMode()) {
+                quarry.toggleDiggingMode();
+            }
+        });
     }
 }

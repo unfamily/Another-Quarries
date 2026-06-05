@@ -63,8 +63,26 @@ public final class ModConfig {
             .defineInRange("006_maxDrones", 64, 1, 1024);
 
     private static final ModConfigSpec.IntValue REGEN_SCAN_INTERVAL_TICKS = BUILDER
-            .comment("Ticks between backward scans for regenerated blocks in the cleared area (20 ticks = 1 second)")
-            .defineInRange("007_regenScanIntervalTicks", 200, 20, 20 * 60 * 10);
+            .comment("Ticks between regen scans near the mining front (20 ticks = 1 second)")
+            .defineInRange("007_regenScanIntervalTicks", 2400, 20, 20 * 60 * 10);
+
+    private static final ModConfigSpec.IntValue REGEN_SCAN_BLOCKS_PER_TICK = BUILDER
+            .comment("Block positions checked per tick during a regen scan (mining continues)")
+            .defineInRange("regenScanBlocksPerTick", 12, 1, 4096);
+
+    private static final ModConfigSpec.IntValue REGEN_SCAN_LAYER_DEPTH = BUILDER
+            .comment("How many recently cleared layers behind the mining front are checked per regen scan")
+            .defineInRange("regenScanLayerDepth", 4, 1, 64);
+
+    private static final ModConfigSpec.IntValue REGEN_QUEUE_MAX_SIZE = BUILDER
+            .comment("Maximum pending regenerated block targets queued per quarry")
+            .defineInRange("regenQueueMaxSize", 256, 16, 4096);
+
+    private static final ModConfigSpec.IntValue FRAME_VALIDATION_BLOCKS_PER_TICK = BUILDER
+            .comment(
+                    "Block positions checked per tick during frame validation on reboot, power-on, or resize",
+                    "Mining waits until validation finishes; higher values finish faster but cost more TPS per tick")
+            .defineInRange("frameValidationBlocksPerTick", 128, 1, 4096);
 
     private static final ModConfigSpec.IntValue EQUIPMENT_GUI_COLUMNS = BUILDER
             .comment("Equipment row width in the quarry GUI background (drone + drill + 3 upgrade slots must fit)")
@@ -87,6 +105,12 @@ public final class ModConfig {
     private static final ModConfigSpec.IntValue MAX_BLOCK_BREAKS_PER_TICK = BUILDER
             .comment("Hard cap on breakBlock calls per quarry per tick (safety limit for server TPS)")
             .defineInRange("012_maxBlockBreaksPerTick", 64, 1, 512);
+
+    private static final ModConfigSpec.IntValue VOLUME_MODE_MAX_FOOTPRINT = BUILDER
+            .comment(
+                    "Max horizontal width and depth (in blocks, height excluded) before auto-switching to chunk-by-chunk mining",
+                    "Footprints up to this size on both axes use volume mode (e.g. 64x64 = 4096 blocks)")
+            .defineInRange("013_volumeModeMaxFootprint", 64, 4, 256);
 
     static {
         BUILDER.pop();
@@ -116,15 +140,6 @@ public final class ModConfig {
     private static final ModConfigSpec.BooleanValue SKIP_INVENTORIES = BUILDER
             .comment("Skip chests, barrels, shulker boxes, and other blocks with item inventories (vanilla or modded)")
             .define("skipInventories", true);
-
-    static {
-        BUILDER.pop();
-        BUILDER.comment("Automatic quarry frame (structure_quarry border)").push("011_frame");
-    }
-
-    private static final ModConfigSpec.IntValue FRAME_VALIDATION_INTERVAL_TICKS = BUILDER
-            .comment("Ticks between border frame integrity scans while mining (20 ticks = 1 second)")
-            .defineInRange("frameValidationIntervalTicks", 200, 20, 20 * 60 * 10);
 
     static {
         BUILDER.pop();
@@ -218,6 +233,10 @@ public final class ModConfig {
 
     public static int maxBlockBreaksPerTick() {
         return MAX_BLOCK_BREAKS_PER_TICK.get();
+    }
+
+    public static int volumeModeMaxFootprint() {
+        return VOLUME_MODE_MAX_FOOTPRINT.get();
     }
 
     /** Blocks one simulated worker may break when its progress completes (preserves drone throughput). */
@@ -331,6 +350,22 @@ public final class ModConfig {
         return REGEN_SCAN_INTERVAL_TICKS.get();
     }
 
+    public static int regenScanBlocksPerTick() {
+        return REGEN_SCAN_BLOCKS_PER_TICK.get();
+    }
+
+    public static int regenScanLayerDepth() {
+        return REGEN_SCAN_LAYER_DEPTH.get();
+    }
+
+    public static int regenQueueMaxSize() {
+        return REGEN_QUEUE_MAX_SIZE.get();
+    }
+
+    public static int frameValidationBlocksPerTick() {
+        return FRAME_VALIDATION_BLOCKS_PER_TICK.get();
+    }
+
     public static List<? extends String> miningDenyList() {
         return MINING_DENY_LIST.get();
     }
@@ -341,10 +376,6 @@ public final class ModConfig {
 
     public static boolean skipInventories() {
         return SKIP_INVENTORIES.get();
-    }
-
-    public static int frameValidationIntervalTicks() {
-        return FRAME_VALIDATION_INTERVAL_TICKS.get();
     }
 
     public static int maxDiggerModules() {

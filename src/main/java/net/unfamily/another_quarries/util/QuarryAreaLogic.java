@@ -3,6 +3,7 @@ package net.unfamily.another_quarries.util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
+import net.unfamily.another_quarries.config.ModConfig;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -72,9 +73,11 @@ public final class QuarryAreaLogic {
                 && blockHeight(sizeHeight) >= 1;
     }
 
-    /** Chunk-by-chunk mining is always used; kept for call-site compatibility. */
+    /** Chunk-by-chunk mining when either horizontal axis exceeds {@link ModConfig#volumeModeMaxFootprint()}. */
     public static boolean requiresChunkDiggingMode(int sizeLeft, int sizeRight, int sizeDepth) {
-        return true;
+        int maxFootprint = ModConfig.volumeModeMaxFootprint();
+        return blockWidth(sizeLeft, sizeRight) > maxFootprint
+                || blockDepth(sizeDepth) > maxFootprint;
     }
 
     /**
@@ -104,8 +107,24 @@ public final class QuarryAreaLogic {
             int sizeHeight,
             int sizeDepth,
             Consumer<BlockPos> consumer) {
+        visitFrameStructureBlocks(
+                quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth,
+                pos -> {
+                    consumer.accept(pos);
+                    return true;
+                });
+    }
+
+    private static boolean visitFrameStructureBlocks(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth,
+            java.util.function.Predicate<BlockPos> visitor) {
         if (!hasFrameOutline(sizeLeft, sizeRight, sizeHeight, sizeDepth)) {
-            return;
+            return true;
         }
         Direction back = facing.getOpposite();
         Direction left = facing.getCounterClockWise(Direction.Axis.Y);
@@ -120,24 +139,39 @@ public final class QuarryAreaLogic {
         };
         for (int[] corner : corners) {
             for (int dy = 0; dy <= sizeHeight; dy++) {
-                consumer.accept(offsetFromBase(base, back, left, right, corner[0], corner[1], dy, corner[2]));
+                if (!visitor.test(offsetFromBase(base, back, left, right, corner[0], corner[1], dy, corner[2]))) {
+                    return false;
+                }
             }
         }
 
         for (int dy : new int[] {0, sizeHeight}) {
             for (int dd = 0; dd <= sizeDepth; dd++) {
-                consumer.accept(offsetFromBase(base, back, left, right, sizeLeft, 0, dy, dd));
-                consumer.accept(offsetFromBase(base, back, left, right, 0, sizeRight, dy, dd));
+                if (!visitor.test(offsetFromBase(base, back, left, right, sizeLeft, 0, dy, dd))) {
+                    return false;
+                }
+                if (!visitor.test(offsetFromBase(base, back, left, right, 0, sizeRight, dy, dd))) {
+                    return false;
+                }
             }
             for (int dl = 0; dl <= sizeLeft; dl++) {
-                consumer.accept(offsetFromBase(base, back, left, right, dl, 0, dy, 0));
-                consumer.accept(offsetFromBase(base, back, left, right, dl, 0, dy, sizeDepth));
+                if (!visitor.test(offsetFromBase(base, back, left, right, dl, 0, dy, 0))) {
+                    return false;
+                }
+                if (!visitor.test(offsetFromBase(base, back, left, right, dl, 0, dy, sizeDepth))) {
+                    return false;
+                }
             }
             for (int dr = 0; dr <= sizeRight; dr++) {
-                consumer.accept(offsetFromBase(base, back, left, right, 0, dr, dy, 0));
-                consumer.accept(offsetFromBase(base, back, left, right, 0, dr, dy, sizeDepth));
+                if (!visitor.test(offsetFromBase(base, back, left, right, 0, dr, dy, 0))) {
+                    return false;
+                }
+                if (!visitor.test(offsetFromBase(base, back, left, right, 0, dr, dy, sizeDepth))) {
+                    return false;
+                }
             }
         }
+        return true;
     }
 
     /** Builds a set of frame positions for fast membership checks during stray-block scans. */
@@ -152,6 +186,131 @@ public final class QuarryAreaLogic {
         forEachFrameStructureBlock(
                 quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth, positions::add);
         return positions;
+    }
+
+    /** Number of frame positions in visit order (same order as {@link #forEachFrameStructureBlockSlice}). */
+    public static int frameStructureBlockCount(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth) {
+        int[] count = {0};
+        forEachFrameStructureBlock(
+                quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth, pos -> count[0]++);
+        return count[0];
+    }
+
+    /**
+     * Visits up to {@code budget} frame positions without building a list.
+     *
+     * @return index to pass as {@code startIndex} on the next call
+     */
+    public static int forEachFrameStructureBlockSlice(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth,
+            int startIndex,
+            int budget,
+            Consumer<BlockPos> consumer) {
+        if (budget <= 0 || startIndex < 0) {
+            return startIndex;
+        }
+        int[] index = {0};
+        int[] nextIndex = {startIndex};
+        int[] remaining = {budget};
+        visitFrameStructureBlocks(
+                quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth,
+                pos -> {
+                    if (remaining[0] <= 0) {
+                        return false;
+                    }
+                    if (index[0] < startIndex) {
+                        index[0]++;
+                        return true;
+                    }
+                    consumer.accept(pos);
+                    nextIndex[0] = ++index[0];
+                    remaining[0]--;
+                    return true;
+                });
+        return nextIndex[0];
+    }
+
+    /** Border-shell positions excluding valid frame blocks (for stray {@code structure_quarry} cleanup). */
+    public static int borderShellBlockCount(
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth) {
+        if (!hasBorderShell(sizeLeft, sizeRight, sizeDepth)) {
+            return 0;
+        }
+        int count = 0;
+        for (int dd = 0; dd <= sizeDepth; dd++) {
+            for (int dy = 0; dy <= sizeHeight; dy++) {
+                for (int dl = 0; dl <= sizeLeft; dl++) {
+                    for (int dr = 0; dr <= sizeRight; dr++) {
+                        if (isBorderShell(dl, dr, dd, dy, sizeLeft, sizeRight, sizeDepth, sizeHeight)) {
+                            count++;
+                        }
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Visits up to {@code budget} border-shell positions without building a list.
+     *
+     * @return index to pass as {@code startIndex} on the next call
+     */
+    public static int forEachBorderShellBlockSlice(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth,
+            int startIndex,
+            int budget,
+            Consumer<BlockPos> consumer) {
+        if (!hasBorderShell(sizeLeft, sizeRight, sizeDepth) || budget <= 0 || startIndex < 0) {
+            return startIndex;
+        }
+        Direction back = facing.getOpposite();
+        Direction left = facing.getCounterClockWise(Direction.Axis.Y);
+        Direction right = facing.getClockWise(Direction.Axis.Y);
+        BlockPos base = miningBase(quarryPos, facing);
+
+        int[] index = {0};
+        int[] nextIndex = {startIndex};
+        int[] remaining = {budget};
+
+        for (int dd = 0; dd <= sizeDepth && remaining[0] > 0; dd++) {
+            for (int dy = 0; dy <= sizeHeight && remaining[0] > 0; dy++) {
+                for (int dl = 0; dl <= sizeLeft && remaining[0] > 0; dl++) {
+                    for (int dr = 0; dr <= sizeRight && remaining[0] > 0; dr++) {
+                        if (!isBorderShell(dl, dr, dd, dy, sizeLeft, sizeRight, sizeDepth, sizeHeight)) {
+                            continue;
+                        }
+                        if (index[0] < startIndex) {
+                            index[0]++;
+                            continue;
+                        }
+                        consumer.accept(offsetFromBase(base, back, left, right, dl, dr, dy, dd));
+                        nextIndex[0] = ++index[0];
+                        remaining[0]--;
+                    }
+                }
+            }
+        }
+        return nextIndex[0];
     }
 
     /**
@@ -277,6 +436,123 @@ public final class QuarryAreaLogic {
             }
         }
         return positions;
+    }
+
+    /**
+     * Visits up to {@code budget} interior volume positions on one dy, without building a layer list.
+     *
+     * @return index to pass as {@code startIndex} on the next call for the same dy
+     */
+    public static int forEachInteriorVolumeAtDySlice(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth,
+            int dy,
+            int chunkX,
+            int chunkZ,
+            boolean limitToChunk,
+            int startIndex,
+            int budget,
+            Consumer<BlockPos> consumer) {
+        if (dy < 0 || dy > sizeHeight || budget <= 0 || startIndex < 0) {
+            return startIndex;
+        }
+        Direction back = facing.getOpposite();
+        Direction left = facing.getCounterClockWise(Direction.Axis.Y);
+        Direction right = facing.getClockWise(Direction.Axis.Y);
+        BlockPos base = miningBase(quarryPos, facing);
+
+        int[] index = {0};
+        int[] nextIndex = {startIndex};
+        int[] remaining = {budget};
+
+        for (int dd = 0; dd <= sizeDepth && remaining[0] > 0; dd++) {
+            for (int dl = 0; dl <= sizeLeft && remaining[0] > 0; dl++) {
+                for (int dr = 0; dr <= sizeRight && remaining[0] > 0; dr++) {
+                    if (isBorderShell(dl, dr, dd, dy, sizeLeft, sizeRight, sizeDepth, sizeHeight)) {
+                        continue;
+                    }
+                    BlockPos pos = offsetFromBase(base, back, left, right, dl, dr, dy, dd);
+                    if (limitToChunk && ((pos.getX() >> 4) != chunkX || (pos.getZ() >> 4) != chunkZ)) {
+                        continue;
+                    }
+                    if (index[0] < startIndex) {
+                        index[0]++;
+                        continue;
+                    }
+                    consumer.accept(pos);
+                    nextIndex[0] = ++index[0];
+                    remaining[0]--;
+                }
+            }
+        }
+        return nextIndex[0];
+    }
+
+    /** Interior column count on one below-Y layer (respects chunk filter when enabled). */
+    public static int interiorBelowLayerBlockCount(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeDepth,
+            int y,
+            int chunkX,
+            int chunkZ,
+            boolean limitToChunk) {
+        int count = 0;
+        for (InteriorColumn column : enumerateInteriorColumns(sizeLeft, sizeRight, sizeDepth)) {
+            BlockPos pos = columnBlockAtY(quarryPos, facing, column, y);
+            if (limitToChunk && ((pos.getX() >> 4) != chunkX || (pos.getZ() >> 4) != chunkZ)) {
+                continue;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    /**
+     * Visits up to {@code budget} interior below-layer positions without building a list.
+     */
+    public static int forEachInteriorBelowAtYSlice(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeDepth,
+            int y,
+            int chunkX,
+            int chunkZ,
+            boolean limitToChunk,
+            int startIndex,
+            int budget,
+            Consumer<BlockPos> consumer) {
+        if (budget <= 0 || startIndex < 0) {
+            return startIndex;
+        }
+        int[] index = {0};
+        int[] nextIndex = {startIndex};
+        int[] remaining = {budget};
+        for (InteriorColumn column : enumerateInteriorColumns(sizeLeft, sizeRight, sizeDepth)) {
+            if (remaining[0] <= 0) {
+                break;
+            }
+            BlockPos pos = columnBlockAtY(quarryPos, facing, column, y);
+            if (limitToChunk && ((pos.getX() >> 4) != chunkX || (pos.getZ() >> 4) != chunkZ)) {
+                continue;
+            }
+            if (index[0] < startIndex) {
+                index[0]++;
+                continue;
+            }
+            consumer.accept(pos);
+            nextIndex[0] = ++index[0];
+            remaining[0]--;
+        }
+        return nextIndex[0];
     }
 
     /**

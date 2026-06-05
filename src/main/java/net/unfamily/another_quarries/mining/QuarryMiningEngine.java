@@ -38,7 +38,10 @@ public final class QuarryMiningEngine {
 
     public QuarryMiningEngine(QuarryBlockEntity quarry) {
         this.quarry = quarry;
-        this.regenScanCooldown = ModConfig.regenScanIntervalTicks();
+        int interval = ModConfig.regenScanIntervalTicks();
+        this.regenScanCooldown = interval > 1
+                ? Math.floorMod(quarry.getBlockPos().hashCode(), interval)
+                : interval;
     }
 
     public boolean tick(Level level) {
@@ -97,7 +100,7 @@ public final class QuarryMiningEngine {
             progressed = tickFrameClear(level, tickCtx, ctx, reserved, rfPerBlock);
             frameController.pruneCompletedClearTargets(level);
             if (frameController.getClearQueue().isEmpty()) {
-                frameController.onClearFinished(level, quarry, facing);
+                frameController.tickPlaceScanIfNeeded(level, quarry, facing);
             }
         } else if (frameController.getPhase() == QuarryFrameController.Phase.PLACING) {
             progressed = tickFramePlace(level, reserved);
@@ -529,12 +532,21 @@ public final class QuarryMiningEngine {
         if (!queueBuilt) {
             return;
         }
+
+        int maxMiningLevel = QuarryDrillAssigner.resolveDrill(quarry.getEquipmentHandler()).maxMiningLevel();
+        int budget = ModConfig.regenScanBlocksPerTick();
+
+        if (queue.isRegenScanActive()) {
+            queue.advanceRegenScan(level, maxMiningLevel, budget);
+            return;
+        }
+
         if (--regenScanCooldown > 0) {
             return;
         }
         regenScanCooldown = ModConfig.regenScanIntervalTicks();
-        int maxMiningLevel = QuarryDrillAssigner.resolveDrill(quarry.getEquipmentHandler()).maxMiningLevel();
-        queue.setRegenQueue(queue.findRegeneratedBlocks(level, maxMiningLevel));
+        queue.beginRegenScan(ModConfig.regenScanLayerDepth());
+        queue.advanceRegenScan(level, maxMiningLevel, budget);
     }
 
     private void resetWorkerTargets() {
@@ -605,8 +617,8 @@ public final class QuarryMiningEngine {
     }
 
     public void load(net.minecraft.world.level.storage.ValueInput input) {
-        queueBuilt = false;
         queueSignature = input.getIntOr("QueueSignature", 0);
+        queueBuilt = input.getBooleanOr("QueueBuilt", false);
         activeChunkIndex = input.getIntOr("ActiveChunkIndex", 0);
         try {
             miningPhase = QuarryBlockQueue.Phase.valueOf(
@@ -618,6 +630,12 @@ public final class QuarryMiningEngine {
         belowLayer = input.getIntOr("BelowLayer", 0);
         layerCursor = input.getIntOr("QueueCursor", 0);
         regenScanCooldown = input.getIntOr("RegenScanCooldown", ModConfig.regenScanIntervalTicks());
+        int interval = ModConfig.regenScanIntervalTicks();
+        if (interval > 1) {
+            regenScanCooldown = Math.max(
+                    regenScanCooldown,
+                    Math.floorMod(quarry.getBlockPos().hashCode(), interval));
+        }
         frameController.load(input);
         queue = QuarryBlockQueue.empty();
         workers.clear();

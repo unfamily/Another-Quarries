@@ -32,6 +32,7 @@ import net.unfamily.another_quarries.mining.QuarryMiningEngine;
 import net.unfamily.another_quarries.mining.QuarryOutputHandler;
 import net.unfamily.another_quarries.registry.ModBlockEntities;
 import net.unfamily.another_quarries.registry.ModItems;
+import net.unfamily.another_quarries.util.QuarryAreaLogic;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
 import net.unfamily.iskalib.transfer.LegacyItemHandlerResourceHandler;
 import net.neoforged.neoforge.transfer.ResourceHandler;
@@ -74,6 +75,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private int sizeDepth = DEFAULT_SIZE_DEPTH;
     private boolean previewEnabled;
     private int redstoneMode;
+    private QuarryDiggingMode diggingMode = QuarryDiggingMode.VOLUME;
     private boolean pulsePreviousRedstone;
     private boolean pulseEdgeAllowsWork;
     private boolean previousCanWork;
@@ -191,11 +193,23 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public QuarryDiggingMode getDiggingMode() {
-        return QuarryDiggingMode.CHUNK;
+        if (requiresChunkDiggingMode()) {
+            return QuarryDiggingMode.CHUNK;
+        }
+        return diggingMode;
     }
 
     public boolean requiresChunkDiggingMode() {
-        return true;
+        return QuarryAreaLogic.requiresChunkDiggingMode(sizeLeft, sizeRight, sizeDepth);
+    }
+
+    public void toggleDiggingMode() {
+        if (requiresChunkDiggingMode()) {
+            return;
+        }
+        diggingMode = diggingMode.toggle();
+        miningEngine.invalidateQueue();
+        setChanged();
     }
 
     public int getRedstoneMode() {
@@ -376,8 +390,10 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         output.putInt("SizeHeight", sizeHeight);
         output.putInt("SizeDepth", sizeDepth);
         output.putBoolean("PreviewEnabled", previewEnabled);
+        output.putInt("DiggingMode", diggingMode.getId());
         output.putInt("RedstoneMode", redstoneMode);
         output.putInt("Energy", energyStorage.getEnergyStored());
+        output.putBoolean("PreviousCanWork", previousCanWork);
         output.putInt("EquipmentVersion", QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION);
         saveHandlerSlots(output, "Buffer", bufferHandler);
         saveHandlerSlots(output, "Equipment", equipmentHandler);
@@ -405,8 +421,9 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         sizeHeight = input.getIntOr("SizeHeight", DEFAULT_SIZE_HEIGHT);
         sizeDepth = input.getIntOr("SizeDepth", DEFAULT_SIZE_DEPTH);
         previewEnabled = input.getBooleanOr("PreviewEnabled", false);
-        input.getIntOr("DiggingMode", 0);
+        diggingMode = QuarryDiggingMode.fromId(input.getIntOr("DiggingMode", QuarryDiggingMode.VOLUME.getId()));
         redstoneMode = input.getIntOr("RedstoneMode", 0);
+        previousCanWork = input.getBooleanOr("PreviousCanWork", false);
         energyStorage.setEnergy(input.getIntOr("Energy", 0));
         int equipmentVersion = input.getIntOr("EquipmentVersion", 1);
         if (equipmentVersion < QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION) {
@@ -416,7 +433,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         }
         loadHandlerSlots(input, "Buffer", bufferHandler);
         miningEngine.load(input);
-        miningEngine.invalidateQueue();
         refreshEnergyCapacity();
     }
 
