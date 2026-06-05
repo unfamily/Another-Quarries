@@ -18,17 +18,17 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
-import net.unfamily.another_quarries.network.packet.QuarryDiggingModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryPreviewToggleC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRebootC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRedstoneModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarrySizeC2SPacket;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
+import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.registry.ModItems;
-import net.unfamily.another_quarries.util.QuarryDiggingMode;
 import net.unfamily.iskalib.client.marker.MarkRenderer;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
@@ -45,33 +45,31 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private static final int BUTTON_W = 14;
     private static final int BUTTON_H = 12;
     private static final int GAP = 3;
+    private static final int ROW2_Y = QuarryMenu.CONTROL_BAND_TOP + 19;
+    private static final int ROW1_Y = ROW2_Y - BUTTON_H - 2;
+    private static final int ENERGY_BAR_WIDTH = 8;
+    private static final int ENERGY_BAR_HEIGHT = 32;
+    private static final int ENERGY_BAR_X = QuarryMenu.CONTROL_BAND_RIGHT - ENERGY_BAR_WIDTH - 5;
+    private static final int ENERGY_BAR_Y = QuarryMenu.CONTROL_BAND_TOP + 1;
     private static final int REBOOT_BUTTON_W = 42;
     private static final int REBOOT_BUTTON_H = 12;
-    private static final int REBOOT_BUTTON_X = CLOSE_BUTTON_X - GAP - REBOOT_BUTTON_W;
-    private static final int REBOOT_BUTTON_Y = CLOSE_BUTTON_Y;
+    private static final int REBOOT_BUTTON_X = ENERGY_BAR_X - GAP - REBOOT_BUTTON_W;
+    private static final int REBOOT_BUTTON_Y = ROW2_Y;
+    private static final int REDSTONE_X = REBOOT_BUTTON_X + (REBOOT_BUTTON_W - MachineGuiButtons.ICON_SIZE) / 2;
+    private static final int REDSTONE_Y = REBOOT_BUTTON_Y - GAP - MachineGuiButtons.ICON_SIZE;
     /** Left column: preview + digging mode stacked; arrow cluster to the right (Collecting Crate pattern). */
     private static final int PREVIEW_BUTTON_X = QuarryMenu.CONTROL_BAND_LEFT + 1;
     private static final int PREVIEW_BUTTON_W = 46;
     private static final int ARROW_GROUP_LEFT_X = PREVIEW_BUTTON_X + PREVIEW_BUTTON_W + GAP;
     private static final int ARROW_GROUP_WIDTH = 3 * BUTTON_W + 2 * GAP;
     private static final int ARROW_GROUP_CENTER_X = ARROW_GROUP_LEFT_X + ARROW_GROUP_WIDTH / 2;
-    private static final int ROW2_Y = QuarryMenu.CONTROL_BAND_TOP + 19;
-    private static final int ROW1_Y = ROW2_Y - BUTTON_H - 2;
     private static final int PREVIEW_BUTTON_Y = ROW1_Y;
     private static final int SIZE_LABEL_Y = ROW2_Y + BUTTON_H + 2;
 
     private static final int DIGGING_MODE_X = PREVIEW_BUTTON_X;
     private static final int DIGGING_MODE_Y = ROW2_Y;
     private static final int DIGGING_MODE_W = PREVIEW_BUTTON_W;
-    private static final int ENERGY_BAR_WIDTH = 8;
-    private static final int ENERGY_BAR_HEIGHT = 32;
-    private static final int ENERGY_BAR_X = QuarryMenu.CONTROL_BAND_RIGHT - ENERGY_BAR_WIDTH - 5;
-    private static final int ENERGY_BAR_Y = QuarryMenu.CONTROL_BAND_TOP + 1;
-    private static final int REDSTONE_X = ENERGY_BAR_X - GAP - MachineGuiButtons.ICON_SIZE;
-    private static final int REDSTONE_Y = ENERGY_BAR_Y + (ENERGY_BAR_HEIGHT - MachineGuiButtons.ICON_SIZE) / 2;
 
-    /** Background still draws nine equipment frames; layout v3 uses six. */
-    private static final int LEGACY_EQUIPMENT_SLOT_COLUMNS = 9;
     private static final int DISABLED_SLOT_OVERLAY = 0xA0000000;
 
     private static final ItemStack GHOST_DRONE = new ItemStack(ModItems.DRONE.get());
@@ -134,8 +132,12 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         buttonPreview.setTooltip(Tooltip.create(Component.translatable("gui.another_quarries.quarry.preview.tooltip")));
         addRenderableWidget(buttonPreview);
 
-        diggingModeButton = Button.builder(diggingModeLabel(), b -> toggleDiggingMode())
-                .bounds(leftPos + DIGGING_MODE_X, topPos + DIGGING_MODE_Y, DIGGING_MODE_W, BUTTON_H).build();
+        diggingModeButton = Button.builder(
+                        Component.translatable("gui.another_quarries.quarry.digging_mode.chunk"),
+                        b -> {})
+                .bounds(leftPos + DIGGING_MODE_X, topPos + DIGGING_MODE_Y, DIGGING_MODE_W, BUTTON_H)
+                .build();
+        diggingModeButton.active = false;
         addRenderableWidget(diggingModeButton);
 
         redstoneButton = addRenderableWidget(MachineGuiButtons.redstoneIconButton(
@@ -164,20 +166,14 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         updateDiggingModeButton();
     }
 
-    private Component diggingModeLabel() {
-        return QuarryDiggingMode.fromId(menu.getDiggingModeId()) == QuarryDiggingMode.CHUNK
-                ? Component.translatable("gui.another_quarries.quarry.digging_mode.chunk")
-                : Component.translatable("gui.another_quarries.quarry.digging_mode.volume");
-    }
-
     private void updateDiggingModeButton() {
-        if (diggingModeButton != null) {
-            diggingModeButton.setMessage(diggingModeLabel());
-            diggingModeButton.setTooltip(Tooltip.create(
-                    QuarryDiggingMode.fromId(menu.getDiggingModeId()) == QuarryDiggingMode.CHUNK
-                            ? Component.translatable("gui.another_quarries.quarry.digging_mode.chunk.tooltip")
-                            : Component.translatable("gui.another_quarries.quarry.digging_mode.volume.tooltip")));
+        if (diggingModeButton == null) {
+            return;
         }
+        diggingModeButton.setMessage(Component.translatable("gui.another_quarries.quarry.digging_mode.chunk"));
+        diggingModeButton.active = false;
+        diggingModeButton.setTooltip(Tooltip.create(
+                Component.translatable("gui.another_quarries.quarry.digging_mode.chunk.forced.tooltip")));
     }
 
     private void updatePreviewButtonLabel() {
@@ -252,15 +248,6 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         updatePreviewButtonLabel();
     }
 
-    private void toggleDiggingMode() {
-        BlockPos pos = menu.getSyncedBlockPos();
-        if (pos.equals(BlockPos.ZERO)) {
-            return;
-        }
-        ClientPacketDistributor.sendToServer(new QuarryDiggingModeC2SPacket(pos));
-        playButtonSound();
-    }
-
     private void sendReboot() {
         BlockPos pos = menu.getSyncedBlockPos();
         if (pos.equals(BlockPos.ZERO)) {
@@ -298,13 +285,13 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     }
 
     private void renderDisabledEquipmentSlots(GuiGraphicsExtractor guiGraphics) {
-        for (int i = QuarryMenu.DRONE_SLOT_INDEX; i < QuarryMenu.PLAYER_SLOT_START; i++) {
-            Slot slot = menu.getSlot(i);
+        for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
+            Slot slot = menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot));
             if (slot != null && !slot.isActive()) {
                 renderDisabledSlotOverlay(guiGraphics, slot.x, slot.y);
             }
         }
-        for (int col = QuarryEquipmentSlots.SLOT_COUNT; col < LEGACY_EQUIPMENT_SLOT_COLUMNS; col++) {
+        for (int col = QuarryEquipmentSlots.slotCount(); col < QuarryEquipmentSlots.guiColumnCount(); col++) {
             renderDisabledSlotOverlay(guiGraphics, QuarryMenu.EQUIPMENT_SLOTS_X + col * 18, QuarryMenu.EQUIPMENT_SLOTS_Y);
         }
     }
@@ -343,11 +330,18 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     }
 
     private void renderGhostItems(GuiGraphicsExtractor guiGraphics) {
-        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.DRONE_SLOT_INDEX), GHOST_DRONE, GuiGhostItem.DEFAULT_ARGB);
-        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.DRILL_SLOT_INDEX), GHOST_DRILL, GuiGhostItem.DEFAULT_ARGB);
-        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.DIGGER_MODULE_SLOT_INDEX), GHOST_DIGGER, GuiGhostItem.DEFAULT_ARGB);
-        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.SPEED_MODULE_SLOT_INDEX), GHOST_SPEED, GuiGhostItem.DEFAULT_ARGB);
-        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.ENCHANT_MODULE_SLOT_INDEX), GHOST_FORTUNE, GuiGhostItem.DEFAULT_ARGB);
+        for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
+            ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
+            if (!ghost.isEmpty()) {
+                GuiGhostItem.render(
+                        guiGraphics,
+                        leftPos,
+                        topPos,
+                        menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot)),
+                        ghost,
+                        GuiGhostItem.DEFAULT_ARGB);
+            }
+        }
     }
 
     private void renderEnergyBar(GuiGraphicsExtractor guiGraphics) {
@@ -381,11 +375,19 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
             int energy = menu.getEnergyStored();
             int maxEnergy = menu.getMaxEnergyStored();
             int rfPerBlock = menu.getEstimatedRfPerBlock();
+            int baseRf = ModConfig.baseRfPerBlock();
+            List<Component> lines = new ArrayList<>();
+            lines.add(Component.translatable("gui.another_quarries.quarry.energy",
+                    String.format("%,d", energy), String.format("%,d", maxEnergy)));
+            lines.add(Component.translatable("gui.another_quarries.quarry.rf_per_block_worker",
+                    String.format("%,d", rfPerBlock)));
+            if (rfPerBlock != baseRf) {
+                lines.add(Component.translatable("gui.another_quarries.quarry.rf_per_block_breakdown",
+                        String.format("%,d", baseRf), String.format("%,d", rfPerBlock - baseRf)));
+            }
             guiGraphics.setTooltipForNextFrame(
                     this.font,
-                    List.of(
-                            Component.literal(String.format("%,d / %,d RF", energy, maxEnergy)).getVisualOrderText(),
-                            Component.literal(String.format("%,d RF per block", rfPerBlock)).getVisualOrderText()),
+                    lines.stream().map(Component::getVisualOrderText).toList(),
                     DefaultTooltipPositioner.INSTANCE,
                     mouseX,
                     mouseY,
@@ -395,10 +397,10 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     }
 
     private void renderGhostTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
-        for (int i = QuarryMenu.DRONE_SLOT_INDEX; i < QuarryMenu.PLAYER_SLOT_START; i++) {
-            Slot slot = menu.getSlot(i);
+        for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
+            Slot slot = menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot));
             if (slot != null && slot.getItem().isEmpty() && isMouseOverSlot(slot, mouseX, mouseY)) {
-                ItemStack ghost = ghostForSlot(i);
+                ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
                 if (!ghost.isEmpty()) {
                     guiGraphics.setTooltipForNextFrame(
                             this.font,
@@ -418,21 +420,29 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         return mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16;
     }
 
-    private ItemStack ghostForSlot(int menuIndex) {
-        if (menuIndex == QuarryMenu.DRONE_SLOT_INDEX) {
+    private ItemStack ghostForEquipmentSlot(int equipmentSlot) {
+        if (QuarryEquipmentSlots.isDroneSlot(equipmentSlot)) {
             return GHOST_DRONE;
         }
-        if (menuIndex == QuarryMenu.DRILL_SLOT_INDEX) {
+        if (QuarryEquipmentSlots.isDrillSlot(equipmentSlot)) {
             return GHOST_DRILL;
         }
-        if (menuIndex == QuarryMenu.DIGGER_MODULE_SLOT_INDEX) {
+        if (equipmentSlot == QuarryEquipmentSlots.diggerModuleSlot()) {
             return GHOST_DIGGER;
         }
-        if (menuIndex == QuarryMenu.SPEED_MODULE_SLOT_INDEX) {
+        if (equipmentSlot == QuarryEquipmentSlots.speedModuleSlot()) {
             return GHOST_SPEED;
         }
-        if (menuIndex == QuarryMenu.ENCHANT_MODULE_SLOT_INDEX) {
+        if (equipmentSlot == QuarryEquipmentSlots.enchantModuleSlot()) {
             return GHOST_FORTUNE;
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private ItemStack ghostForSlot(int menuIndex) {
+        int equipmentSlot = menuIndex - QuarryMenu.BUFFER_SLOT_COUNT;
+        if (equipmentSlot >= 0 && equipmentSlot < QuarryEquipmentSlots.slotCount()) {
+            return ghostForEquipmentSlot(equipmentSlot);
         }
         return ItemStack.EMPTY;
     }

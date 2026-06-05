@@ -27,6 +27,7 @@ import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
 import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.mining.QuarryChunkTickets;
+import net.unfamily.another_quarries.mining.QuarryDrillAssigner;
 import net.unfamily.another_quarries.mining.QuarryMiningEngine;
 import net.unfamily.another_quarries.mining.QuarryOutputHandler;
 import net.unfamily.another_quarries.registry.ModBlockEntities;
@@ -42,17 +43,19 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     public static final int BUFFER_SLOT_COUNT = 27;
-    public static final int EQUIPMENT_SLOT_COUNT = QuarryEquipmentSlots.SLOT_COUNT;
+    public static int equipmentSlotCount() {
+        return QuarryEquipmentSlots.slotCount();
+    }
 
-    /** @deprecated use {@link QuarryEquipmentSlots#DRONE_SLOT} */
+    /** @deprecated use {@link QuarryEquipmentSlots#firstDroneSlot()} */
     @Deprecated
-    public static final int DRONE_SLOT_INDEX = QuarryEquipmentSlots.DRONE_SLOT;
-    /** @deprecated use {@link QuarryEquipmentSlots#DRILL_SLOT} */
+    public static final int DRONE_SLOT_INDEX = 0;
+    /** @deprecated use {@link QuarryEquipmentSlots#drillSlotStart()} */
     @Deprecated
-    public static final int DRILL_SLOT_INDEX = QuarryEquipmentSlots.DRILL_SLOT;
-    /** @deprecated use {@link QuarryEquipmentSlots#DIGGER_MODULE_SLOT} */
+    public static final int DRILL_SLOT_INDEX = 1;
+    /** @deprecated use {@link QuarryEquipmentSlots#diggerModuleSlot()} */
     @Deprecated
-    public static final int MODULE_SLOT_START = QuarryEquipmentSlots.DIGGER_MODULE_SLOT;
+    public static final int MODULE_SLOT_START = 2;
     /** @deprecated only three module slots now */
     @Deprecated
     public static final int MODULE_SLOT_COUNT = 3;
@@ -70,7 +73,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private int sizeHeight = DEFAULT_SIZE_HEIGHT;
     private int sizeDepth = DEFAULT_SIZE_DEPTH;
     private boolean previewEnabled;
-    private QuarryDiggingMode diggingMode = QuarryDiggingMode.VOLUME;
     private int redstoneMode;
     private boolean pulsePreviousRedstone;
     private boolean pulseEdgeAllowsWork;
@@ -82,7 +84,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private final EnergyHandlerImpl energyHandler;
     private final ResourceHandler<ItemResource> itemTransferHandler;
     private final QuarryMiningEngine miningEngine;
-    private final int energyCapacity;
     private final LongOpenHashSet forcedMiningChunks = new LongOpenHashSet();
 
     public QuarryBlockEntity(BlockPos pos, BlockState state) {
@@ -93,10 +94,11 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
                 setChanged();
             }
         };
-        this.equipmentHandler = new ItemStackHandler(EQUIPMENT_SLOT_COUNT) {
+        this.equipmentHandler = new ItemStackHandler(QuarryEquipmentSlots.slotCount()) {
             @Override
             protected void onContentsChanged(int slot) {
                 setChanged();
+                refreshEnergyCapacity();
             }
 
             @Override
@@ -109,11 +111,24 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
                 return QuarryEquipmentSlots.getSlotLimit(slot, this);
             }
         };
-        this.energyCapacity = ModConfig.quarryEnergyBuffer();
-        this.energyStorage = new EnergyStorageImpl(energyCapacity, energyCapacity, energyCapacity);
+        int initialCapacity = ModConfig.resolveEnergyBufferCapacity(peakRfPerTick());
+        this.energyStorage = new EnergyStorageImpl(initialCapacity, initialCapacity, initialCapacity);
         this.energyHandler = new EnergyHandlerImpl();
         this.itemTransferHandler = LegacyItemHandlerResourceHandler.wrap(bufferHandler);
         this.miningEngine = new QuarryMiningEngine(this);
+    }
+
+    private int peakRfPerTick() {
+        int logicalWorkers = QuarryEquipmentSlots.effectiveWorkerCount(equipmentHandler);
+        int activeWorkers = QuarryDrillAssigner.activeWorkerCount(equipmentHandler);
+        int blocksPerCompletion = ModConfig.blocksPerWorkerCompletion(logicalWorkers, activeWorkers);
+        int blocksPerTick = Math.min(ModConfig.maxBlockBreaksPerTick(), activeWorkers * blocksPerCompletion);
+        return blocksPerTick * estimatedRfPerBlock();
+    }
+
+    public void refreshEnergyCapacity() {
+        int capacity = ModConfig.resolveEnergyBufferCapacity(peakRfPerTick());
+        energyStorage.setCapacity(capacity, capacity, capacity);
     }
 
     public ItemStackHandler getBufferHandler() {
@@ -145,7 +160,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public int getMaxEnergyDisplay() {
-        return energyCapacity;
+        return energyStorage.getCapacity();
     }
 
     public int getSizeLeft() {
@@ -176,18 +191,11 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public QuarryDiggingMode getDiggingMode() {
-        return diggingMode;
+        return QuarryDiggingMode.CHUNK;
     }
 
-    public void setDiggingMode(QuarryDiggingMode mode) {
-        this.diggingMode = mode != null ? mode : QuarryDiggingMode.VOLUME;
-        miningEngine.invalidateQueue();
-        miningEngine.invalidateFrame();
-        setChanged();
-    }
-
-    public void toggleDiggingMode() {
-        setDiggingMode(diggingMode.toggle());
+    public boolean requiresChunkDiggingMode() {
+        return true;
     }
 
     public int getRedstoneMode() {
@@ -258,7 +266,8 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
                 QuarryEquipmentSlots.diggerModuleCount(equipmentHandler),
                 QuarryEquipmentSlots.speedModuleCount(equipmentHandler),
                 QuarryEquipmentSlots.fortuneLevel(equipmentHandler),
-                QuarryEquipmentSlots.hasSilkTouch(equipmentHandler));
+                QuarryEquipmentSlots.hasSilkTouch(equipmentHandler),
+                QuarryDrillAssigner.resolveDrill(equipmentHandler));
     }
 
     public void updatePulseEdge() {
@@ -367,7 +376,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         output.putInt("SizeHeight", sizeHeight);
         output.putInt("SizeDepth", sizeDepth);
         output.putBoolean("PreviewEnabled", previewEnabled);
-        output.putInt("DiggingMode", diggingMode.getId());
         output.putInt("RedstoneMode", redstoneMode);
         output.putInt("Energy", energyStorage.getEnergyStored());
         output.putInt("EquipmentVersion", QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION);
@@ -397,7 +405,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         sizeHeight = input.getIntOr("SizeHeight", DEFAULT_SIZE_HEIGHT);
         sizeDepth = input.getIntOr("SizeDepth", DEFAULT_SIZE_DEPTH);
         previewEnabled = input.getBooleanOr("PreviewEnabled", false);
-        diggingMode = QuarryDiggingMode.fromId(input.getIntOr("DiggingMode", 0));
+        input.getIntOr("DiggingMode", 0);
         redstoneMode = input.getIntOr("RedstoneMode", 0);
         energyStorage.setEnergy(input.getIntOr("Energy", 0));
         int equipmentVersion = input.getIntOr("EquipmentVersion", 1);
@@ -409,6 +417,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         loadHandlerSlots(input, "Buffer", bufferHandler);
         miningEngine.load(input);
         miningEngine.invalidateQueue();
+        refreshEnergyCapacity();
     }
 
     private static void loadHandlerSlots(ValueInput input, String key, ItemStackHandler handler) {
@@ -433,14 +442,45 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             handler.setStackInSlot(i, ItemStack.EMPTY);
         }
 
-        mergeStack(handler, QuarryEquipmentSlots.DRONE_SLOT, bySlot.getOrDefault(QuarryEquipmentSlots.DRONE_SLOT, ItemStack.EMPTY));
+        if (fromVersion == 3) {
+            migrateFromLayoutV3(handler, bySlot);
+            return;
+        }
+
+        mergeStack(handler, QuarryEquipmentSlots.firstDroneSlot(),
+                bySlot.getOrDefault(QuarryEquipmentSlots.legacyV3DroneSlot(), ItemStack.EMPTY));
 
         ItemStack bestDrill = pickBestLegacyDrill(bySlot, fromVersion);
         if (!bestDrill.isEmpty()) {
-            handler.setStackInSlot(QuarryEquipmentSlots.DRILL_SLOT, bestDrill);
+            handler.setStackInSlot(QuarryEquipmentSlots.drillSlotStart(), bestDrill);
         }
 
         migrateLegacyModules(handler, bySlot, fromVersion);
+    }
+
+    private static void migrateFromLayoutV3(ItemStackHandler handler, java.util.Map<Integer, ItemStack> bySlot) {
+        mergeStack(handler, QuarryEquipmentSlots.firstDroneSlot(),
+                bySlot.getOrDefault(QuarryEquipmentSlots.legacyV3DroneSlot(), ItemStack.EMPTY));
+
+        ItemStack drill = bySlot.get(QuarryEquipmentSlots.legacyV3DrillSlot());
+        if (drill != null && !drill.isEmpty()) {
+            handler.setStackInSlot(QuarryEquipmentSlots.drillSlotStart(), singleDrillStack(normalizeLegacyDrill(drill)));
+        }
+
+        migrateLegacyModulesFromV3(handler, bySlot);
+    }
+
+    private static void migrateLegacyModulesFromV3(ItemStackHandler handler, java.util.Map<Integer, ItemStack> bySlot) {
+        int[] diggerCount = {0};
+        int[] speedCount = {0};
+        ItemStack[] fortuneStack = {ItemStack.EMPTY};
+        ItemStack[] silkStack = {ItemStack.EMPTY};
+
+        accumulateModules(bySlot.get(QuarryEquipmentSlots.legacyV3DiggerSlot()), diggerCount, speedCount, fortuneStack, silkStack);
+        accumulateModules(bySlot.get(QuarryEquipmentSlots.legacyV3SpeedSlot()), diggerCount, speedCount, fortuneStack, silkStack);
+        accumulateModules(bySlot.get(QuarryEquipmentSlots.legacyV3EnchantSlot()), diggerCount, speedCount, fortuneStack, silkStack);
+
+        applyConsolidatedModules(handler, diggerCount[0], speedCount[0], fortuneStack[0], silkStack[0]);
     }
 
     private static ItemStack pickBestLegacyDrill(java.util.Map<Integer, ItemStack> bySlot, int fromVersion) {
@@ -457,12 +497,12 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
                 }
             }
         } else {
-            ItemStack slotOne = bySlot.get(QuarryEquipmentSlots.DRILL_SLOT);
+            ItemStack slotOne = bySlot.get(QuarryEquipmentSlots.legacyV3DrillSlot());
             if (slotOne != null && !slotOne.isEmpty()) {
                 candidates.add(slotOne);
             }
             for (var entry : bySlot.entrySet()) {
-                if (entry.getKey() > QuarryEquipmentSlots.DRILL_SLOT && !normalizeLegacyDrill(entry.getValue()).isEmpty()) {
+                if (entry.getKey() > QuarryEquipmentSlots.legacyV3DrillSlot() && !normalizeLegacyDrill(entry.getValue()).isEmpty()) {
                     candidates.add(entry.getValue());
                 }
             }
@@ -526,29 +566,38 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             accumulateModules(bySlot.get(LEGACY_V2_ENCHANT_SLOT), diggerCount, speedCount, fortuneStack, silkStack);
         } else {
             for (var entry : bySlot.entrySet()) {
-                if (entry.getKey() <= QuarryEquipmentSlots.DRILL_SLOT) {
+                if (entry.getKey() <= QuarryEquipmentSlots.legacyV3DrillSlot()) {
                     continue;
                 }
                 accumulateModules(entry.getValue(), diggerCount, speedCount, fortuneStack, silkStack);
             }
         }
 
-        if (diggerCount[0] > 0) {
-            handler.setStackInSlot(QuarryEquipmentSlots.DIGGER_MODULE_SLOT,
-                    new ItemStack(ModItems.MODULE_DIGGER.get(), Math.min(diggerCount[0], ModConfig.maxDiggerModules())));
+        applyConsolidatedModules(handler, diggerCount[0], speedCount[0], fortuneStack[0], silkStack[0]);
+    }
+
+    private static void applyConsolidatedModules(
+            ItemStackHandler handler,
+            int diggerCount,
+            int speedCount,
+            ItemStack fortuneStack,
+            ItemStack silkStack) {
+        if (diggerCount > 0) {
+            handler.setStackInSlot(QuarryEquipmentSlots.diggerModuleSlot(),
+                    new ItemStack(ModItems.MODULE_DIGGER.get(), Math.min(diggerCount, ModConfig.maxDiggerModules())));
         }
-        if (speedCount[0] > 0) {
-            handler.setStackInSlot(QuarryEquipmentSlots.SPEED_MODULE_SLOT,
-                    new ItemStack(ModItems.MODULE_SPEED.get(), Math.min(speedCount[0], ModConfig.maxSpeedModules())));
+        if (speedCount > 0) {
+            handler.setStackInSlot(QuarryEquipmentSlots.speedModuleSlot(),
+                    new ItemStack(ModItems.MODULE_SPEED.get(), Math.min(speedCount, ModConfig.maxSpeedModules())));
         }
-        if (!silkStack[0].isEmpty()) {
-            handler.setStackInSlot(QuarryEquipmentSlots.ENCHANT_MODULE_SLOT,
+        if (!silkStack.isEmpty()) {
+            handler.setStackInSlot(QuarryEquipmentSlots.enchantModuleSlot(),
                     new ItemStack(ModItems.MODULE_SILK_TOUCH.get(),
-                            Math.min(silkStack[0].getCount(), ModConfig.maxSilkTouchModules())));
-        } else if (!fortuneStack[0].isEmpty()) {
-            handler.setStackInSlot(QuarryEquipmentSlots.ENCHANT_MODULE_SLOT,
+                            Math.min(silkStack.getCount(), ModConfig.maxSilkTouchModules())));
+        } else if (!fortuneStack.isEmpty()) {
+            handler.setStackInSlot(QuarryEquipmentSlots.enchantModuleSlot(),
                     new ItemStack(ModItems.MODULE_FORTUNE.get(),
-                            Math.min(fortuneStack[0].getCount(), ModConfig.maxFortuneModules())));
+                            Math.min(fortuneStack.getCount(), ModConfig.maxFortuneModules())));
         }
     }
 
@@ -595,6 +644,19 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             super(capacity, maxReceive, maxExtract);
         }
 
+        public int getCapacity() {
+            return capacity;
+        }
+
+        public void setCapacity(int capacity, int maxReceive, int maxExtract) {
+            this.capacity = Math.max(1, capacity);
+            this.maxReceive = Math.max(0, maxReceive);
+            this.maxExtract = Math.max(0, maxExtract);
+            if (energy > this.capacity) {
+                energy = this.capacity;
+            }
+        }
+
         public void setEnergy(int energy) {
             this.energy = Math.max(0, Math.min(energy, capacity));
         }
@@ -619,13 +681,13 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
 
         @Override
         public long getCapacityAsLong() {
-            return energyCapacity;
+            return energyStorage.getCapacity();
         }
 
         @Override
         public int insert(int amount, net.neoforged.neoforge.transfer.transaction.TransactionContext transaction) {
             net.neoforged.neoforge.transfer.TransferPreconditions.checkNonNegative(amount);
-            if (amount == 0 || energyCapacity <= 0) {
+            if (amount == 0 || energyStorage.getCapacity() <= 0) {
                 return 0;
             }
             updateSnapshots(transaction);
@@ -635,7 +697,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         @Override
         public int extract(int amount, net.neoforged.neoforge.transfer.transaction.TransactionContext transaction) {
             net.neoforged.neoforge.transfer.TransferPreconditions.checkNonNegative(amount);
-            if (amount == 0 || energyCapacity <= 0) {
+            if (amount == 0 || energyStorage.getCapacity() <= 0) {
                 return 0;
             }
             updateSnapshots(transaction);

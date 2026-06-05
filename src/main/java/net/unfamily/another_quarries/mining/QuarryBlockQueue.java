@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.util.QuarryAreaLogic;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
 
@@ -187,6 +188,9 @@ public final class QuarryBlockQueue {
             if (reserved.contains(pos)) {
                 continue;
             }
+            if (!isMineableChunkLoaded(level, pos)) {
+                continue;
+            }
             if (level.isEmptyBlock(pos)) {
                 continue;
             }
@@ -202,11 +206,18 @@ public final class QuarryBlockQueue {
             if (reserved.contains(pos)) {
                 continue;
             }
+            if (!isMineableChunkLoaded(level, pos)) {
+                return false;
+            }
             if (QuarryMiningFilters.isMineable(level, pos, maxMiningLevel)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private boolean isMineableChunkLoaded(Level level, BlockPos pos) {
+        return level.isLoaded(pos);
     }
 
     private boolean advanceLayer(Level level) {
@@ -308,13 +319,16 @@ public final class QuarryBlockQueue {
                 quarryPos, facing, sizeLeft, sizeRight, sizeDepth, y);
     }
 
-    private static void collectMineable(
+    private void collectMineable(
             Level level,
             List<BlockPos> positions,
             Set<BlockPos> seen,
             List<BlockPos> found,
             int maxMiningLevel) {
         for (BlockPos pos : positions) {
+            if (!isMineableChunkLoaded(level, pos)) {
+                continue;
+            }
             if (QuarryMiningFilters.isMineable(level, pos, maxMiningLevel) && seen.add(pos)) {
                 found.add(pos);
             }
@@ -337,6 +351,9 @@ public final class QuarryBlockQueue {
                 continue;
             }
             if (mode == QuarryDiggingMode.CHUNK && !isInActiveChunk(pos)) {
+                continue;
+            }
+            if (!isMineableChunkLoaded(level, pos)) {
                 continue;
             }
             if (QuarryMiningFilters.isMineable(level, pos, maxMiningLevel)) {

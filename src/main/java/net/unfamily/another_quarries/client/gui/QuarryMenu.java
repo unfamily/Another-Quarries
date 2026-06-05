@@ -41,31 +41,67 @@ public class QuarryMenu extends AbstractContainerMenu {
     public static final int CONTROL_BAND_HEIGHT = CONTROL_BAND_BOTTOM - CONTROL_BAND_TOP;
 
     public static final int BUFFER_SLOT_COUNT = QuarryBlockEntity.BUFFER_SLOT_COUNT;
-    public static final int DRONE_SLOT_INDEX = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.DRONE_SLOT;
-    public static final int DRILL_SLOT_INDEX = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.DRILL_SLOT;
-    public static final int DIGGER_MODULE_SLOT_INDEX = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.DIGGER_MODULE_SLOT;
-    public static final int SPEED_MODULE_SLOT_INDEX = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.SPEED_MODULE_SLOT;
-    public static final int ENCHANT_MODULE_SLOT_INDEX = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.ENCHANT_MODULE_SLOT;
-    public static final int FILTER_SLOT_INDEX = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.FILTER_SLOT;
-    /** @deprecated use {@link #DRILL_SLOT_INDEX} */
+    public static int equipmentSlotCount() {
+        return QuarryEquipmentSlots.slotCount();
+    }
+
+    public static int equipmentMenuIndex(int equipmentSlot) {
+        return BUFFER_SLOT_COUNT + equipmentSlot;
+    }
+
+    public static int firstDroneMenuIndex() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.firstDroneSlot());
+    }
+
+    public static int droneMenuIndexEnd() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.drillSlotStart());
+    }
+
+    public static int firstDrillMenuIndex() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.drillSlotStart());
+    }
+
+    public static int drillMenuIndexEnd() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.diggerModuleSlot());
+    }
+
+    public static int diggerModuleMenuIndex() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.diggerModuleSlot());
+    }
+
+    public static int speedModuleMenuIndex() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.speedModuleSlot());
+    }
+
+    public static int enchantModuleMenuIndex() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.enchantModuleSlot());
+    }
+
+    /** @deprecated use {@link #firstDroneMenuIndex()} */
     @Deprecated
-    public static final int IRON_DRILL_SLOT_INDEX = DRILL_SLOT_INDEX;
-    /** @deprecated use {@link #DRILL_SLOT_INDEX} */
+    public static final int DRONE_SLOT_INDEX = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.firstDroneSlot();
+    /** @deprecated use {@link #firstDrillMenuIndex()} */
     @Deprecated
-    public static final int DIAMOND_DRILL_SLOT_INDEX = DRILL_SLOT_INDEX;
-    /** @deprecated use {@link #DRILL_SLOT_INDEX} */
+    public static final int DRILL_SLOT_INDEX = BUFFER_SLOT_COUNT + 1;
+    /** @deprecated use {@link #diggerModuleMenuIndex()} */
     @Deprecated
-    public static final int NETHERITE_DRILL_SLOT_INDEX = DRILL_SLOT_INDEX;
-    /** @deprecated use {@link #DRILL_SLOT_INDEX} */
+    public static final int DIGGER_MODULE_SLOT_INDEX = BUFFER_SLOT_COUNT + 2;
+    /** @deprecated use {@link #speedModuleMenuIndex()} */
     @Deprecated
-    public static final int LASER_DRILL_SLOT_INDEX = DRILL_SLOT_INDEX;
-    /** @deprecated use {@link #DIGGER_MODULE_SLOT_INDEX} */
+    public static final int SPEED_MODULE_SLOT_INDEX = BUFFER_SLOT_COUNT + 3;
+    /** @deprecated use {@link #enchantModuleMenuIndex()} */
+    @Deprecated
+    public static final int ENCHANT_MODULE_SLOT_INDEX = BUFFER_SLOT_COUNT + 4;
+    /** @deprecated unused reserved GUI column */
+    @Deprecated
+    public static final int FILTER_SLOT_INDEX = BUFFER_SLOT_COUNT + 5;
+    /** @deprecated use {@link #diggerModuleMenuIndex()} */
     @Deprecated
     public static final int MODULE_SLOT_START = DIGGER_MODULE_SLOT_INDEX;
     /** @deprecated */
     @Deprecated
     public static final int MODULE_SLOT_COUNT = 3;
-    public static final int PLAYER_SLOT_START = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.SLOT_COUNT;
+    public static final int PLAYER_SLOT_START = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.guiColumnCount();
 
     private static final int ENERGY_INDEX = 0;
     private static final int MAX_ENERGY_INDEX = 1;
@@ -109,7 +145,7 @@ public class QuarryMenu extends AbstractContainerMenu {
         this.containerData = new SimpleContainerData(DATA_COUNT);
         this.addDataSlots(this.containerData);
         ItemStackHandler buffer = new ItemStackHandler(BUFFER_SLOT_COUNT);
-        ItemStackHandler equipment = new ItemStackHandler(QuarryBlockEntity.EQUIPMENT_SLOT_COUNT);
+        ItemStackHandler equipment = new ItemStackHandler(QuarryMenu.equipmentSlotCount());
         addBufferSlots(buffer);
         addEquipmentSlots(equipment);
         addPlayerInventory(playerInventory);
@@ -169,27 +205,19 @@ public class QuarryMenu extends AbstractContainerMenu {
     }
 
     private void addEquipmentSlots(IItemHandler handler) {
-        for (int col = 0; col < QuarryEquipmentSlots.SLOT_COUNT; col++) {
+        for (int col = 0; col < QuarryEquipmentSlots.slotCount(); col++) {
             int slotIndex = col;
             addSlot(new SlotItemHandler(handler, slotIndex,
                     EQUIPMENT_SLOTS_X + col * 18,
                     EQUIPMENT_SLOTS_Y) {
                 @Override
                 public boolean mayPlace(ItemStack stack) {
-                    if (slotIndex == QuarryEquipmentSlots.FILTER_SLOT) {
-                        return false;
-                    }
                     return handler.isItemValid(slotIndex, stack);
                 }
 
                 @Override
                 public int getMaxStackSize(ItemStack stack) {
                     return handler.getSlotLimit(slotIndex);
-                }
-
-                @Override
-                public boolean isActive() {
-                    return slotIndex != QuarryEquipmentSlots.FILTER_SLOT;
                 }
             });
         }
@@ -231,23 +259,23 @@ public class QuarryMenu extends AbstractContainerMenu {
                     return ItemStack.EMPTY;
                 }
             } else if (ModItems.isDrone(slotStack)) {
-                if (!moveToEquipment(slotStack, DRONE_SLOT_INDEX, DRONE_SLOT_INDEX + 1)) {
+                if (!moveToEquipment(slotStack, firstDroneMenuIndex(), droneMenuIndexEnd())) {
                     return ItemStack.EMPTY;
                 }
             } else if (ModItems.isAnyDrill(slotStack)) {
-                if (!moveToEquipment(slotStack, DRILL_SLOT_INDEX, DRILL_SLOT_INDEX + 1)) {
+                if (!moveToEquipment(slotStack, firstDrillMenuIndex(), drillMenuIndexEnd())) {
                     return ItemStack.EMPTY;
                 }
             } else if (slotStack.is(ModItems.MODULE_DIGGER.get())) {
-                if (!moveToEquipment(slotStack, DIGGER_MODULE_SLOT_INDEX, DIGGER_MODULE_SLOT_INDEX + 1)) {
+                if (!moveToEquipment(slotStack, diggerModuleMenuIndex(), diggerModuleMenuIndex() + 1)) {
                     return ItemStack.EMPTY;
                 }
             } else if (slotStack.is(ModItems.MODULE_SPEED.get())) {
-                if (!moveToEquipment(slotStack, SPEED_MODULE_SLOT_INDEX, SPEED_MODULE_SLOT_INDEX + 1)) {
+                if (!moveToEquipment(slotStack, speedModuleMenuIndex(), speedModuleMenuIndex() + 1)) {
                     return ItemStack.EMPTY;
                 }
             } else if (slotStack.is(ModItems.MODULE_FORTUNE.get()) || slotStack.is(ModItems.MODULE_SILK_TOUCH.get())) {
-                if (!moveToEquipment(slotStack, ENCHANT_MODULE_SLOT_INDEX, ENCHANT_MODULE_SLOT_INDEX + 1)) {
+                if (!moveToEquipment(slotStack, enchantModuleMenuIndex(), enchantModuleMenuIndex() + 1)) {
                     return ItemStack.EMPTY;
                 }
             } else if (!this.moveItemStackTo(slotStack, 0, PLAYER_SLOT_START, false)) {
@@ -285,6 +313,10 @@ public class QuarryMenu extends AbstractContainerMenu {
 
     public int getDiggingModeId() {
         return containerData.get(DIGGING_MODE_INDEX);
+    }
+
+    public boolean requiresChunkDiggingMode() {
+        return true;
     }
 
     public int getEstimatedRfPerBlock() {

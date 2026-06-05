@@ -15,11 +15,12 @@ import net.unfamily.another_quarries.registry.ModBlocks;
 import net.unfamily.another_quarries.util.QuarryAreaLogic;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
- * Builds and maintains the decorative {@code structure_quarry} frame on the mining border shell.
+ * Builds and maintains the decorative {@code structure_quarry} frame on the outer volume border.
  */
 public final class QuarryFrameController {
     public enum Phase {
@@ -94,7 +95,8 @@ public final class QuarryFrameController {
     }
 
     public void scanBorder(ServerLevel level, QuarryBlockEntity quarry, Direction facing) {
-        if (!QuarryAreaLogic.hasBorderShell(quarry.getSizeLeft(), quarry.getSizeRight(), quarry.getSizeDepth())) {
+        if (!QuarryAreaLogic.hasFrameOutline(
+                quarry.getSizeLeft(), quarry.getSizeRight(), quarry.getSizeHeight(), quarry.getSizeDepth())) {
             skipped = true;
             phase = Phase.READY;
             clearQueue.clear();
@@ -107,13 +109,19 @@ public final class QuarryFrameController {
         placeQueue.clear();
 
         int maxMiningLevel = QuarryDrillAssigner.resolveDrill(quarry.getEquipmentHandler()).maxMiningLevel();
-        for (BlockPos pos : QuarryAreaLogic.enumerateBorderShellBlocks(
+        List<BlockPos> validFrame = QuarryAreaLogic.enumerateFrameStructureBlocks(
                 quarry.getBlockPos(),
                 facing,
                 quarry.getSizeLeft(),
                 quarry.getSizeRight(),
                 quarry.getSizeHeight(),
-                quarry.getSizeDepth())) {
+                quarry.getSizeDepth());
+        Set<BlockPos> validFrameSet = new HashSet<>(validFrame);
+
+        for (BlockPos pos : validFrame) {
+            if (!level.isLoaded(pos)) {
+                continue;
+            }
             BlockState state = level.getBlockState(pos);
             if (state.is(ModBlocks.STRUCTURE_QUARRY.get())) {
                 continue;
@@ -125,6 +133,24 @@ public final class QuarryFrameController {
                 continue;
             }
             placeQueue.add(pos);
+        }
+
+        for (BlockPos pos : QuarryAreaLogic.enumerateOuterVolumeBlocks(
+                quarry.getBlockPos(),
+                facing,
+                quarry.getSizeLeft(),
+                quarry.getSizeRight(),
+                quarry.getSizeHeight(),
+                quarry.getSizeDepth())) {
+            if (validFrameSet.contains(pos)) {
+                continue;
+            }
+            if (!level.isLoaded(pos)) {
+                continue;
+            }
+            if (level.getBlockState(pos).is(ModBlocks.STRUCTURE_QUARRY.get())) {
+                clearQueue.add(pos);
+            }
         }
 
         advancePhaseFromQueues();
@@ -154,13 +180,16 @@ public final class QuarryFrameController {
 
     private void scanPlaceNeeds(ServerLevel level, QuarryBlockEntity quarry, Direction facing) {
         placeQueue.clear();
-        for (BlockPos pos : QuarryAreaLogic.enumerateBorderShellBlocks(
+        for (BlockPos pos : QuarryAreaLogic.enumerateFrameStructureBlocks(
                 quarry.getBlockPos(),
                 facing,
                 quarry.getSizeLeft(),
                 quarry.getSizeRight(),
                 quarry.getSizeHeight(),
                 quarry.getSizeDepth())) {
+            if (!level.isLoaded(pos)) {
+                continue;
+            }
             BlockState state = level.getBlockState(pos);
             if (!state.is(ModBlocks.STRUCTURE_QUARRY.get()) && state.isAir()) {
                 placeQueue.add(pos);
@@ -175,8 +204,11 @@ public final class QuarryFrameController {
                 continue;
             }
             BlockState state = level.getBlockState(pos);
-            if (state.isAir() || state.is(ModBlocks.STRUCTURE_QUARRY.get())) {
+            if (state.isAir()) {
                 continue;
+            }
+            if (state.is(ModBlocks.STRUCTURE_QUARRY.get())) {
+                return pos;
             }
             if (QuarryMiningFilters.isMineable(level, pos, maxMiningLevel)) {
                 return pos;
@@ -198,6 +230,19 @@ public final class QuarryFrameController {
         return null;
     }
 
+    public boolean removeFrameBlock(ServerLevel level, BlockPos pos) {
+        BlockState current = level.getBlockState(pos);
+        if (!current.is(ModBlocks.STRUCTURE_QUARRY.get())) {
+            return false;
+        }
+        if (!level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), net.minecraft.world.level.block.Block.UPDATE_ALL)) {
+            return false;
+        }
+        StructureQuarryBlock.updateConnectionsAround(level, pos);
+        StructureQuarryVisualRefresh.refreshAround(level, pos);
+        return true;
+    }
+
     public boolean placeFrameBlock(ServerLevel level, BlockPos pos) {
         BlockState current = level.getBlockState(pos);
         if (!current.isAir()) {
@@ -215,25 +260,12 @@ public final class QuarryFrameController {
     public void pruneCompletedClearTargets(Level level) {
         clearQueue.removeIf(pos -> {
             BlockState state = level.getBlockState(pos);
-            return state.isAir() || state.is(ModBlocks.STRUCTURE_QUARRY.get());
+            return state.isAir();
         });
     }
 
     public void pruneCompletedPlaceTargets(Level level) {
         placeQueue.removeIf(pos -> level.getBlockState(pos).is(ModBlocks.STRUCTURE_QUARRY.get()));
-    }
-
-    public List<BlockPos> getFramePositionsForChunks(QuarryBlockEntity quarry, Direction facing) {
-        if (!QuarryAreaLogic.hasBorderShell(quarry.getSizeLeft(), quarry.getSizeRight(), quarry.getSizeDepth())) {
-            return List.of();
-        }
-        return QuarryAreaLogic.enumerateBorderShellBlocks(
-                quarry.getBlockPos(),
-                facing,
-                quarry.getSizeLeft(),
-                quarry.getSizeRight(),
-                quarry.getSizeHeight(),
-                quarry.getSizeDepth());
     }
 
     public void save(ValueOutput output) {

@@ -3,6 +3,7 @@ package net.unfamily.another_quarries.mining;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -19,6 +20,8 @@ import java.util.List;
 import java.util.Set;
 
 public final class QuarryMiningEngine {
+    private static final int AIR_SKIP_INTERVAL_TICKS = 20;
+
     private final QuarryBlockEntity quarry;
     private final QuarryFrameController frameController = new QuarryFrameController();
     private QuarryBlockQueue queue = QuarryBlockQueue.empty();
@@ -31,6 +34,7 @@ public final class QuarryMiningEngine {
     private int belowLayer;
     private int layerCursor;
     private int regenScanCooldown;
+    private int airSkipCooldown;
 
     public QuarryMiningEngine(QuarryBlockEntity quarry) {
         this.quarry = quarry;
@@ -43,8 +47,10 @@ public final class QuarryMiningEngine {
         }
 
         ItemStackHandler equipment = quarry.getEquipmentHandler();
-        List<QuarryDrillType> drills = QuarryDrillAssigner.assign(equipment);
-        if (drills.isEmpty()) {
+        int logicalWorkers = QuarryEquipmentSlots.effectiveWorkerCount(equipment);
+        int activeWorkers = QuarryDrillAssigner.activeWorkerCount(equipment);
+        QuarryDrillType drill = QuarryDrillAssigner.resolveDrill(equipment);
+        if (activeWorkers <= 0) {
             workers.clear();
             setQuarryVisual(level, QuarryBlock.QuarryState.OFF);
             return false;
@@ -59,7 +65,7 @@ public final class QuarryMiningEngine {
             frameController.scanBorder(serverLevel, quarry, facing);
         }
 
-        syncWorkers(drills.size());
+        syncWorkers(activeWorkers);
 
         ItemStackHandler buffer = quarry.getBufferHandler();
         if (!QuarryOutputHandler.hasBufferSpace(buffer)) {
@@ -70,30 +76,31 @@ public final class QuarryMiningEngine {
             return frameController.isFrameWorkActive();
         }
 
+        int blocksPerCompletion = ModConfig.blocksPerWorkerCompletion(logicalWorkers, activeWorkers);
+        MiningTickContext tickCtx = new MiningTickContext(
+                equipment, drill, logicalWorkers, activeWorkers, blocksPerCompletion, buffer);
+
         if (!frameController.isReady()) {
-            return tickFrameWork(serverLevel, facing, drills, equipment, buffer);
+            return tickFrameWork(serverLevel, facing, tickCtx);
         }
 
-        return tickMining(serverLevel, facing, drills, equipment, buffer);
+        return tickMining(serverLevel, facing, tickCtx);
     }
 
-    private boolean tickFrameWork(
-            ServerLevel level,
-            Direction facing,
-            List<QuarryDrillType> drills,
-            ItemStackHandler equipment,
-            ItemStackHandler buffer) {
+    private boolean tickFrameWork(ServerLevel level, Direction facing, MiningTickContext tickCtx) {
         boolean progressed = false;
         int rfPerBlock = quarry.estimatedRfPerBlock();
+        QuarryWorkContext ctx = buildContext(tickCtx.equipment(), tickCtx.drill(), rfPerBlock, level);
+        Set<BlockPos> reserved = buildReservedTargets();
 
         if (frameController.getPhase() == QuarryFrameController.Phase.CLEARING) {
-            progressed = tickFrameClear(level, drills, equipment, buffer, rfPerBlock);
+            progressed = tickFrameClear(level, tickCtx, ctx, reserved, rfPerBlock);
             frameController.pruneCompletedClearTargets(level);
             if (frameController.getClearQueue().isEmpty()) {
                 frameController.onClearFinished(level, quarry, facing);
             }
         } else if (frameController.getPhase() == QuarryFrameController.Phase.PLACING) {
-            progressed = tickFramePlace(level);
+            progressed = tickFramePlace(level, reserved);
             frameController.pruneCompletedPlaceTargets(level);
             if (frameController.getPlaceQueue().isEmpty()) {
                 frameController.onPlaceFinished();
@@ -112,28 +119,63 @@ public final class QuarryMiningEngine {
 
     private boolean tickFrameClear(
             ServerLevel level,
-            List<QuarryDrillType> drills,
-            ItemStackHandler equipment,
-            ItemStackHandler buffer,
+            MiningTickContext tickCtx,
+            QuarryWorkContext ctx,
+            Set<BlockPos> reserved,
             int rfPerBlock) {
         boolean progressed = false;
+        boolean changed = false;
+        QuarryDrillType drill = tickCtx.drill();
+        int breaksRemaining = ModConfig.maxBlockBreaksPerTick();
 
         for (WorkerState worker : workers) {
-            if (worker.drillIndex >= drills.size()) {
-                continue;
-            }
-            QuarryDrillType drill = drills.get(worker.drillIndex);
-            QuarryWorkContext ctx = buildContext(equipment, drill, rfPerBlock, level);
-
-            if (worker.target == null || !QuarryBlockBreaker.canBreak(level, worker.target, drill)) {
-                worker.target = takeNextFrameClearTarget(level, worker);
-                worker.progress = 0;
-                worker.requiredTicks = worker.target != null
-                        ? QuarryBlockBreaker.breakTicksForBlock(level, worker.target, ctx)
-                        : 0;
+            if (breaksRemaining <= 0) {
+                break;
             }
 
             if (worker.target == null) {
+                worker.target = takeNextFrameClearTarget(reserved, worker);
+                worker.progress = 0;
+                worker.requiredTicks = worker.target != null
+                        ? (level.getBlockState(worker.target).is(net.unfamily.another_quarries.registry.ModBlocks.STRUCTURE_QUARRY.get())
+                                ? 1
+                                : QuarryBlockBreaker.breakTicksForBlock(level, worker.target, ctx))
+                        : 0;
+            } else {
+                BlockState currentTarget = level.getBlockState(worker.target);
+                boolean frameRemoval = currentTarget.is(net.unfamily.another_quarries.registry.ModBlocks.STRUCTURE_QUARRY.get());
+                if (!frameRemoval && !QuarryBlockBreaker.canBreak(level, worker.target, drill)) {
+                    releaseReservedTarget(reserved, worker);
+                    worker.target = takeNextFrameClearTarget(reserved, worker);
+                    worker.progress = 0;
+                    worker.requiredTicks = worker.target != null
+                            ? QuarryBlockBreaker.breakTicksForBlock(level, worker.target, ctx)
+                            : 0;
+                }
+            }
+
+            if (worker.target == null) {
+                continue;
+            }
+
+            BlockState targetState = level.getBlockState(worker.target);
+            if (targetState.is(net.unfamily.another_quarries.registry.ModBlocks.STRUCTURE_QUARRY.get())) {
+                worker.progress++;
+                if (worker.progress < 1) {
+                    progressed = true;
+                    continue;
+                }
+                if (frameController.removeFrameBlock(level, worker.target)) {
+                    releaseReservedTarget(reserved, worker);
+                    worker.target = null;
+                    worker.progress = 0;
+                    changed = true;
+                    progressed = true;
+                } else {
+                    releaseReservedTarget(reserved, worker);
+                    worker.target = takeNextFrameClearTarget(reserved, worker);
+                    worker.progress = 0;
+                }
                 continue;
             }
 
@@ -149,20 +191,23 @@ public final class QuarryMiningEngine {
                 continue;
             }
 
-            if (!QuarryOutputHandler.hasBufferSpace(buffer)) {
+            if (!QuarryOutputHandler.hasBufferSpace(tickCtx.buffer())) {
                 worker.progress = worker.requiredTicks - 1;
                 progressed = true;
                 continue;
             }
 
-            if (QuarryBlockBreaker.breakBlock(level, worker.target, ctx, buffer)) {
+            if (QuarryBlockBreaker.breakBlock(level, worker.target, ctx, tickCtx.buffer())) {
                 quarry.getEnergyStorage().extractEnergy(rfPerBlock, false);
-                quarry.setChanged();
+                releaseReservedTarget(reserved, worker);
                 worker.target = null;
                 worker.progress = 0;
+                changed = true;
+                breaksRemaining--;
                 progressed = true;
             } else {
-                worker.target = takeNextFrameClearTarget(level, worker);
+                releaseReservedTarget(reserved, worker);
+                worker.target = takeNextFrameClearTarget(reserved, worker);
                 worker.progress = 0;
                 worker.requiredTicks = worker.target != null
                         ? QuarryBlockBreaker.breakTicksForBlock(level, worker.target, ctx)
@@ -170,15 +215,20 @@ public final class QuarryMiningEngine {
             }
         }
 
+        if (changed) {
+            quarry.setChanged();
+        }
         return progressed;
     }
 
-    private boolean tickFramePlace(ServerLevel level) {
+    private boolean tickFramePlace(ServerLevel level, Set<BlockPos> reserved) {
         boolean progressed = false;
+        boolean changed = false;
 
         for (WorkerState worker : workers) {
             if (worker.target == null || !level.getBlockState(worker.target).isAir()) {
-                worker.target = takeNextFramePlaceTarget(level, worker);
+                releaseReservedTarget(reserved, worker);
+                worker.target = takeNextFramePlaceTarget(reserved, worker);
                 worker.progress = 0;
                 worker.requiredTicks = worker.target != null ? 1 : 0;
             }
@@ -194,64 +244,67 @@ public final class QuarryMiningEngine {
             }
 
             if (frameController.placeFrameBlock(level, worker.target)) {
-                quarry.setChanged();
+                releaseReservedTarget(reserved, worker);
                 worker.target = null;
                 worker.progress = 0;
+                changed = true;
                 progressed = true;
             } else {
-                worker.target = takeNextFramePlaceTarget(level, worker);
+                releaseReservedTarget(reserved, worker);
+                worker.target = takeNextFramePlaceTarget(reserved, worker);
                 worker.progress = 0;
                 worker.requiredTicks = worker.target != null ? 1 : 0;
             }
         }
 
+        if (changed) {
+            quarry.setChanged();
+        }
         return progressed;
     }
 
-    private BlockPos takeNextFrameClearTarget(Level level, WorkerState forWorker) {
-        Set<BlockPos> reserved = new HashSet<>();
-        for (WorkerState worker : workers) {
-            if (worker != forWorker && worker.target != null) {
-                reserved.add(worker.target);
-            }
+    private BlockPos takeNextFrameClearTarget(Set<BlockPos> reserved, WorkerState forWorker) {
+        releaseReservedTarget(reserved, forWorker);
+        BlockPos next = frameController.takeNextClearTarget(quarry.getLevel(), reserved);
+        if (next != null) {
+            reserved.add(next);
         }
-        return frameController.takeNextClearTarget(level, reserved);
+        return next;
     }
 
-    private BlockPos takeNextFramePlaceTarget(Level level, WorkerState forWorker) {
-        Set<BlockPos> reserved = new HashSet<>();
-        for (WorkerState worker : workers) {
-            if (worker != forWorker && worker.target != null) {
-                reserved.add(worker.target);
-            }
+    private BlockPos takeNextFramePlaceTarget(Set<BlockPos> reserved, WorkerState forWorker) {
+        releaseReservedTarget(reserved, forWorker);
+        BlockPos next = frameController.takeNextPlaceTarget(quarry.getLevel(), reserved);
+        if (next != null) {
+            reserved.add(next);
         }
-        return frameController.takeNextPlaceTarget(level, reserved);
+        return next;
     }
 
-    private boolean tickMining(
-            ServerLevel level,
-            Direction facing,
-            List<QuarryDrillType> drills,
-            ItemStackHandler equipment,
-            ItemStackHandler buffer) {
+    private boolean tickMining(ServerLevel level, Direction facing, MiningTickContext tickCtx) {
         ensureQueue(level);
-        if (queueBuilt) {
+        if (queueBuilt && --airSkipCooldown <= 0) {
+            airSkipCooldown = AIR_SKIP_INTERVAL_TICKS;
             queue.fastSkipAir(level);
         }
         scanRegeneratedBlocksIfDue(level);
 
         boolean progressed = false;
         int rfPerBlock = quarry.estimatedRfPerBlock();
+        QuarryWorkContext ctx = buildContext(tickCtx.equipment(), tickCtx.drill(), rfPerBlock, level);
+        Set<BlockPos> reserved = buildReservedTargets();
+        int breaksRemaining = ModConfig.maxBlockBreaksPerTick();
+        boolean changed = false;
+        QuarryDrillType drill = tickCtx.drill();
 
         for (WorkerState worker : workers) {
-            if (worker.drillIndex >= drills.size()) {
-                continue;
+            if (breaksRemaining <= 0) {
+                break;
             }
-            QuarryDrillType drill = drills.get(worker.drillIndex);
-            QuarryWorkContext ctx = buildContext(equipment, drill, rfPerBlock, level);
 
             if (worker.target == null || !QuarryBlockBreaker.canBreak(level, worker.target, drill)) {
-                worker.target = takeNextTarget(level, worker, drill);
+                releaseReservedTarget(reserved, worker);
+                worker.target = takeNextMiningTarget(level, reserved, drill);
                 worker.progress = 0;
                 worker.requiredTicks = worker.target != null
                         ? QuarryBlockBreaker.breakTicksForBlock(level, worker.target, ctx)
@@ -268,37 +321,73 @@ public final class QuarryMiningEngine {
                 continue;
             }
 
-            if (quarry.getEnergyStorage().getEnergyStored() < rfPerBlock) {
+            int blocksToBreak = Math.min(tickCtx.blocksPerCompletion(), breaksRemaining);
+            int broken = completeMiningBreaks(
+                    level, worker, ctx, tickCtx.buffer(), rfPerBlock, drill, reserved, blocksToBreak);
+            if (broken > 0) {
+                changed = true;
+                breaksRemaining -= broken;
+                progressed = true;
+            } else if (worker.target != null) {
                 worker.progress = worker.requiredTicks - 1;
                 progressed = true;
-                continue;
             }
+        }
 
-            if (!QuarryOutputHandler.hasBufferSpace(buffer)) {
-                worker.progress = worker.requiredTicks - 1;
-                progressed = true;
-                continue;
-            }
-
-            if (QuarryBlockBreaker.breakBlock(level, worker.target, ctx, buffer)) {
-                quarry.getEnergyStorage().extractEnergy(rfPerBlock, false);
-                quarry.setChanged();
-                worker.target = null;
-                worker.progress = 0;
-                progressed = true;
-            } else {
-                worker.target = takeNextTarget(level, worker, drill);
-                worker.progress = 0;
-                worker.requiredTicks = worker.target != null
-                        ? QuarryBlockBreaker.breakTicksForBlock(level, worker.target, ctx)
-                        : 0;
-            }
+        if (changed) {
+            quarry.setChanged();
         }
 
         boolean active = progressed || workers.stream().anyMatch(w -> w.target != null);
         setQuarryVisual(level, active ? QuarryBlock.QuarryState.ON : QuarryBlock.QuarryState.OFF);
         syncQueueState();
         return active;
+    }
+
+    private int completeMiningBreaks(
+            ServerLevel level,
+            WorkerState worker,
+            QuarryWorkContext ctx,
+            ItemStackHandler buffer,
+            int rfPerBlock,
+            QuarryDrillType drill,
+            Set<BlockPos> reserved,
+            int blocksToBreak) {
+        int broken = 0;
+        for (int i = 0; i < blocksToBreak; i++) {
+            if (worker.target == null || !QuarryBlockBreaker.canBreak(level, worker.target, drill)) {
+                releaseReservedTarget(reserved, worker);
+                worker.target = takeNextMiningTarget(level, reserved, drill);
+                if (worker.target == null) {
+                    worker.progress = 0;
+                    worker.requiredTicks = 0;
+                    break;
+                }
+                worker.requiredTicks = QuarryBlockBreaker.breakTicksForBlock(level, worker.target, ctx);
+                worker.progress = worker.requiredTicks;
+            }
+
+            if (quarry.getEnergyStorage().getEnergyStored() < rfPerBlock) {
+                break;
+            }
+            if (!QuarryOutputHandler.hasBufferSpace(buffer)) {
+                break;
+            }
+
+            if (QuarryBlockBreaker.breakBlock(level, worker.target, ctx, buffer)) {
+                quarry.getEnergyStorage().extractEnergy(rfPerBlock, false);
+                releaseReservedTarget(reserved, worker);
+                worker.target = null;
+                worker.progress = 0;
+                broken++;
+            } else {
+                releaseReservedTarget(reserved, worker);
+                worker.target = null;
+                worker.progress = 0;
+                break;
+            }
+        }
+        return broken;
     }
 
     public void onPowerEnabled() {
@@ -321,12 +410,10 @@ public final class QuarryMiningEngine {
     }
 
     public List<BlockPos> getChunkTicketPositions(Level level) {
-        BlockState state = level.getBlockState(quarry.getBlockPos());
-        Direction facing = state.getValue(HorizontalDirectionalBlock.FACING);
-
-        List<BlockPos> positions = new ArrayList<>(getActiveTargetPositions());
-        positions.addAll(frameController.getFramePositionsForChunks(quarry, facing));
-        return positions;
+        if (quarry.getDiggingMode() != QuarryDiggingMode.CHUNK) {
+            return List.of();
+        }
+        return getActiveTargetPositions();
     }
 
     private void syncQueueState() {
@@ -339,10 +426,11 @@ public final class QuarryMiningEngine {
         }
     }
 
-    private QuarryWorkContext buildContext(ItemStackHandler equipment, QuarryDrillType drill, int rfPerBlock, Level level) {
+    private QuarryWorkContext buildContext(
+            ItemStackHandler equipment, QuarryDrillType drill, int rfPerBlock, ServerLevel level) {
         BlockState state = level.getBlockState(quarry.getBlockPos());
         Direction facing = state.getValue(HorizontalDirectionalBlock.FACING);
-        return new QuarryWorkContext(
+        QuarryWorkContext base = new QuarryWorkContext(
                 drill,
                 QuarryEquipmentSlots.diggerModuleCount(equipment),
                 QuarryEquipmentSlots.speedModuleCount(equipment),
@@ -350,7 +438,19 @@ public final class QuarryMiningEngine {
                 QuarryEquipmentSlots.hasSilkTouch(equipment),
                 rfPerBlock,
                 facing,
-                quarry.getDiggingMode());
+                quarry.getDiggingMode(),
+                ItemStack.EMPTY);
+        ItemStack breakTool = QuarryBlockBreaker.buildBreakTool(base, level);
+        return new QuarryWorkContext(
+                base.drill(),
+                base.diggerModules(),
+                base.speedModules(),
+                base.fortuneLevel(),
+                base.silkTouch(),
+                base.rfPerBlock(),
+                base.facing(),
+                base.diggingMode(),
+                breakTool);
     }
 
     private void ensureQueue(Level level) {
@@ -401,14 +501,28 @@ public final class QuarryMiningEngine {
         resetWorkerTargets();
     }
 
-    private BlockPos takeNextTarget(Level level, WorkerState forWorker, QuarryDrillType drill) {
-        Set<BlockPos> reserved = new HashSet<>();
+    private Set<BlockPos> buildReservedTargets() {
+        Set<BlockPos> reserved = new HashSet<>(workers.size());
         for (WorkerState worker : workers) {
-            if (worker != forWorker && worker.target != null) {
+            if (worker.target != null) {
                 reserved.add(worker.target);
             }
         }
-        return queue.takeNextMineable(level, reserved, drill.maxMiningLevel());
+        return reserved;
+    }
+
+    private BlockPos takeNextMiningTarget(Level level, Set<BlockPos> reserved, QuarryDrillType drill) {
+        BlockPos next = queue.takeNextMineable(level, reserved, drill.maxMiningLevel());
+        if (next != null) {
+            reserved.add(next);
+        }
+        return next;
+    }
+
+    private static void releaseReservedTarget(Set<BlockPos> reserved, WorkerState worker) {
+        if (worker.target != null) {
+            reserved.remove(worker.target);
+        }
     }
 
     private void scanRegeneratedBlocksIfDue(Level level) {
@@ -418,9 +532,7 @@ public final class QuarryMiningEngine {
         if (--regenScanCooldown > 0) {
             return;
         }
-        regenScanCooldown = quarry.getDiggingMode() == QuarryDiggingMode.CHUNK
-                ? ModConfig.regenScanIntervalTicks() * 2
-                : ModConfig.regenScanIntervalTicks();
+        regenScanCooldown = ModConfig.regenScanIntervalTicks();
         int maxMiningLevel = QuarryDrillAssigner.resolveDrill(quarry.getEquipmentHandler()).maxMiningLevel();
         queue.setRegenQueue(queue.findRegeneratedBlocks(level, maxMiningLevel));
     }
@@ -459,6 +571,7 @@ public final class QuarryMiningEngine {
         belowLayer = 0;
         layerCursor = 0;
         regenScanCooldown = ModConfig.regenScanIntervalTicks();
+        airSkipCooldown = 0;
         resetWorkerTargets();
     }
 
@@ -519,6 +632,14 @@ public final class QuarryMiningEngine {
             level.setBlock(quarry.getBlockPos(), state.setValue(QuarryBlock.STATE, target), 3);
         }
     }
+
+    private record MiningTickContext(
+            ItemStackHandler equipment,
+            QuarryDrillType drill,
+            int logicalWorkers,
+            int activeWorkers,
+            int blocksPerCompletion,
+            ItemStackHandler buffer) {}
 
     public static final class WorkerState {
         public static final com.mojang.serialization.Codec<WorkerState> CODEC = com.mojang.serialization.codecs.RecordCodecBuilder.create(instance ->

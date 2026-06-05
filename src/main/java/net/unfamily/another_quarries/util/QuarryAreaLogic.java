@@ -5,7 +5,10 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * Mining volume behind the quarry facing. Height extends upward from the base row.
@@ -61,6 +64,97 @@ public final class QuarryAreaLogic {
     }
 
     /**
+     * True when a frame outline makes sense (volume is at least 2 blocks on each horizontal axis).
+     */
+    public static boolean hasFrameOutline(int sizeLeft, int sizeRight, int sizeHeight, int sizeDepth) {
+        return blockWidth(sizeLeft, sizeRight) >= 2
+                && blockDepth(sizeDepth) >= 2
+                && blockHeight(sizeHeight) >= 1;
+    }
+
+    /** Chunk-by-chunk mining is always used; kept for call-site compatibility. */
+    public static boolean requiresChunkDiggingMode(int sizeLeft, int sizeRight, int sizeDepth) {
+        return true;
+    }
+
+    /**
+     * Decorative frame: four corner pillars plus a thin outer rim at floor and ceiling.
+     */
+    public static List<BlockPos> enumerateFrameStructureBlocks(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth) {
+        List<BlockPos> positions = new ArrayList<>();
+        forEachFrameStructureBlock(
+                quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth, positions::add);
+        return positions;
+    }
+
+    /**
+     * Visits frame block positions directly (O(frame size), not O(volume)).
+     */
+    public static void forEachFrameStructureBlock(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth,
+            Consumer<BlockPos> consumer) {
+        if (!hasFrameOutline(sizeLeft, sizeRight, sizeHeight, sizeDepth)) {
+            return;
+        }
+        Direction back = facing.getOpposite();
+        Direction left = facing.getCounterClockWise(Direction.Axis.Y);
+        Direction right = facing.getClockWise(Direction.Axis.Y);
+        BlockPos base = miningBase(quarryPos, facing);
+
+        int[][] corners = {
+                {sizeLeft, 0, 0},
+                {0, sizeRight, 0},
+                {sizeLeft, 0, sizeDepth},
+                {0, sizeRight, sizeDepth}
+        };
+        for (int[] corner : corners) {
+            for (int dy = 0; dy <= sizeHeight; dy++) {
+                consumer.accept(offsetFromBase(base, back, left, right, corner[0], corner[1], dy, corner[2]));
+            }
+        }
+
+        for (int dy : new int[] {0, sizeHeight}) {
+            for (int dd = 0; dd <= sizeDepth; dd++) {
+                consumer.accept(offsetFromBase(base, back, left, right, sizeLeft, 0, dy, dd));
+                consumer.accept(offsetFromBase(base, back, left, right, 0, sizeRight, dy, dd));
+            }
+            for (int dl = 0; dl <= sizeLeft; dl++) {
+                consumer.accept(offsetFromBase(base, back, left, right, dl, 0, dy, 0));
+                consumer.accept(offsetFromBase(base, back, left, right, dl, 0, dy, sizeDepth));
+            }
+            for (int dr = 0; dr <= sizeRight; dr++) {
+                consumer.accept(offsetFromBase(base, back, left, right, 0, dr, dy, 0));
+                consumer.accept(offsetFromBase(base, back, left, right, 0, dr, dy, sizeDepth));
+            }
+        }
+    }
+
+    /** Builds a set of frame positions for fast membership checks during stray-block scans. */
+    public static Set<BlockPos> frameStructureBlockSet(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth) {
+        Set<BlockPos> positions = new HashSet<>();
+        forEachFrameStructureBlock(
+                quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth, positions::add);
+        return positions;
+    }
+
+    /**
      * True when the configured footprint has a horizontal border shell (at least one axis wider than 2 blocks).
      */
     public static boolean hasBorderShell(int sizeLeft, int sizeRight, int sizeDepth) {
@@ -68,7 +162,7 @@ public final class QuarryAreaLogic {
     }
 
     /**
-     * All border-shell block positions in the configured volume (frame perimeter).
+     * All border-shell block positions in the configured volume (full 1-block-thick mining exclusion shell).
      */
     public static List<BlockPos> enumerateBorderShellBlocks(
             BlockPos quarryPos,
@@ -143,7 +237,7 @@ public final class QuarryAreaLogic {
             int sizeHeight,
             int sizeDepth) {
         it.unimi.dsi.fastutil.longs.LongOpenHashSet chunks = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
-        for (BlockPos pos : enumerateBorderShellBlocks(
+        for (BlockPos pos : enumerateFrameStructureBlocks(
                 quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth)) {
             chunks.add(net.minecraft.world.level.ChunkPos.pack(pos));
         }
@@ -332,6 +426,17 @@ public final class QuarryAreaLogic {
         return positions;
     }
 
+    /** Every block position inside the configured mining volume box. */
+    public static List<BlockPos> enumerateOuterVolumeBlocks(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth) {
+        return enumerateOuterBlocks(quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth);
+    }
+
     private static List<BlockPos> enumerateOuterBlocks(
             BlockPos quarryPos,
             Direction facing,
@@ -375,8 +480,64 @@ public final class QuarryAreaLogic {
         return widthBorder || depthBorder;
     }
 
-    static BlockPos miningBase(BlockPos quarryPos, Direction facing) {
+    /**
+     * Frame block: one vertical pillar per footprint corner, plus a 1-block-thick outer rim at floor/ceiling.
+     */
+    static boolean isFrameStructureBlock(
+            int dl,
+            int dr,
+            int dd,
+            int dy,
+            int sizeLeft,
+            int sizeRight,
+            int sizeDepth,
+            int sizeHeight) {
+        if (isFrameCornerColumn(dl, dr, dd, sizeLeft, sizeRight, sizeDepth)) {
+            return true;
+        }
+        return (dy == 0 || dy == sizeHeight)
+                && isFrameTopBottomRim(dl, dr, dd, sizeLeft, sizeRight, sizeDepth);
+    }
+
+    /** One of the four horizontal corners of the configured mining footprint. */
+    static boolean isFrameCornerColumn(int dl, int dr, int dd, int sizeLeft, int sizeRight, int sizeDepth) {
+        return (dl == sizeLeft && dr == 0 && dd == 0)
+                || (dl == 0 && dr == sizeRight && dd == 0)
+                || (dl == sizeLeft && dr == 0 && dd == sizeDepth)
+                || (dl == 0 && dr == sizeRight && dd == sizeDepth);
+    }
+
+    /**
+     * Outer horizontal perimeter at floor/ceiling only (left/right edge lines plus front/back L-rims).
+     * Does not fill the interior of front/back depth faces.
+     */
+    static boolean isFrameTopBottomRim(int dl, int dr, int dd, int sizeLeft, int sizeRight, int sizeDepth) {
+        if (dl == sizeLeft && dr == 0) {
+            return true;
+        }
+        if (dl == 0 && dr == sizeRight) {
+            return true;
+        }
+        if (dd == 0 && (dr == 0 || dl == 0)) {
+            return true;
+        }
+        return dd == sizeDepth && (dr == 0 || dl == 0);
+    }
+
+    public static BlockPos miningBase(BlockPos quarryPos, Direction facing) {
         return quarryPos.relative(facing.getOpposite(), 1);
+    }
+
+    public static BlockPos offsetFromBaseForScan(
+            BlockPos base,
+            Direction back,
+            Direction left,
+            Direction right,
+            int dl,
+            int dr,
+            int dy,
+            int dd) {
+        return offsetFromBase(base, back, left, right, dl, dr, dy, dd);
     }
 
     private static BlockPos offsetFromBase(

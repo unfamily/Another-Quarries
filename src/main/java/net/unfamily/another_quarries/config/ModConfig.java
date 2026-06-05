@@ -8,43 +8,85 @@ import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.mining.QuarryMiningFilters;
 
+import net.unfamily.another_quarries.mining.QuarryDrillType;
+
 import java.util.List;
 
 @EventBusSubscriber(modid = AnotherQuarries.MOD_ID)
 public final class ModConfig {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
+    /** Seconds of peak draw used to pick the energy buffer tier from {@link #energyBufferTiers()}. */
+    private static final int DEFAULT_BUFFER_SECONDS_AT_PEAK = 30;
+
+    private static int[] cachedEnergyBufferTiers = new int[0];
+
     static {
         BUILDER.comment("Quarry base settings").push("000_quarry");
     }
 
     private static final ModConfigSpec.IntValue RF_PER_BLOCK = BUILDER
-            .comment("Default RF consumed per block mined")
-            .defineInRange("000_rfPerBlock", 10, 0, Integer.MAX_VALUE);
+            .comment("Base RF consumed per block mined (before module and drill extras)")
+            .defineInRange("000_rfPerBlock", 50, 0, Integer.MAX_VALUE);
 
-    private static final ModConfigSpec.IntValue QUARRY_ENERGY_BUFFER = BUILDER
-            .comment("Internal RF buffer capacity for the quarry")
-            .defineInRange("001_energyBuffer", 100_000, 1, Integer.MAX_VALUE);
+    private static final ModConfigSpec.ConfigValue<List<? extends String>> ENERGY_BUFFER_TIERS = BUILDER
+            .comment(
+                    "Ascending RF buffer capacity tiers (round values)",
+                    "Quarry starts at the first tier and moves up while peak consumption reaches the upgrade ratio")
+            .defineList(
+                    "001_energyBufferTiers",
+                    List.of("100000", "500000", "1000000", "5000000", "10000000", "50000000"),
+                    entry -> entry instanceof String);
+
+    private static final ModConfigSpec.IntValue ENERGY_BUFFER_SECONDS_AT_PEAK = BUILDER
+            .comment("Seconds of peak RF draw used to estimate consumption against buffer tiers")
+            .defineInRange("002_energyBufferSecondsAtPeak", DEFAULT_BUFFER_SECONDS_AT_PEAK, 1, 600);
+
+    private static final ModConfigSpec.DoubleValue ENERGY_BUFFER_TIER_UPGRADE_RATIO = BUILDER
+            .comment("Advance to the next buffer tier when peak consumption reaches this fraction of the current tier")
+            .defineInRange("energyBufferTierUpgradeRatio", 0.80, 0.1, 1.0);
 
     private static final ModConfigSpec.IntValue QUARRY_BASE_RANGE = BUILDER
             .comment("Default max blocks per axis when no range modules are installed")
-            .defineInRange("002_baseRange", 4, 1, 64);
+            .defineInRange("003_baseRange", 4, 1, 64);
 
     private static final ModConfigSpec.IntValue QUARRY_MAX_RANGE = BUILDER
             .comment("Absolute max blocks per axis for the quarry area")
-            .defineInRange("003_maxRange", 256, 1, 256);
+            .defineInRange("004_maxRange", 256, 1, 256);
 
     private static final ModConfigSpec.IntValue BASE_BREAK_TICKS = BUILDER
             .comment("Base ticks to break one block with one worker and no speed modules (20 ticks = 1 second)")
-            .defineInRange("004_baseBreakTicks", 60, 1, 20 * 60 * 10);
+            .defineInRange("005_baseBreakTicks", 60, 1, 20 * 60 * 10);
 
     private static final ModConfigSpec.IntValue MAX_DRONES = BUILDER
-            .comment("Maximum drones in the drone equipment slot")
-            .defineInRange("005_maxDrones", 64, 1, 64);
+            .comment("Maximum drones installed in the drone equipment slot")
+            .defineInRange("006_maxDrones", 64, 1, 1024);
 
     private static final ModConfigSpec.IntValue REGEN_SCAN_INTERVAL_TICKS = BUILDER
             .comment("Ticks between backward scans for regenerated blocks in the cleared area (20 ticks = 1 second)")
-            .defineInRange("006_regenScanIntervalTicks", 200, 20, 20 * 60 * 10);
+            .defineInRange("007_regenScanIntervalTicks", 200, 20, 20 * 60 * 10);
+
+    private static final ModConfigSpec.IntValue EQUIPMENT_GUI_COLUMNS = BUILDER
+            .comment("Equipment row width in the quarry GUI background (drone + drill + 3 upgrade slots must fit)")
+            .defineInRange("008_equipmentGuiColumns", 9, 5, 9);
+
+    private static final ModConfigSpec.IntValue EQUIPMENT_DRONE_SLOTS = BUILDER
+            .comment("Number of drone equipment slots; total installed drones are capped by maxDrones")
+            .defineInRange("009_equipmentDroneSlots", 1, 1, 8);
+
+    private static final ModConfigSpec.IntValue EQUIPMENT_DRILL_SLOTS = BUILDER
+            .comment("Number of drill equipment slots; the best drill among them is used for mining")
+            .defineInRange("010_equipmentDrillSlots", 1, 1, 4);
+
+    private static final ModConfigSpec.IntValue MAX_ACTIVE_MINING_WORKERS = BUILDER
+            .comment(
+                    "Maximum worker simulations per quarry per tick (reduces TPS cost of large drone stacks)",
+                    "Extra drones still increase throughput via batched block breaks per worker completion")
+            .defineInRange("011_maxActiveMiningWorkers", 64, 1, 128);
+
+    private static final ModConfigSpec.IntValue MAX_BLOCK_BREAKS_PER_TICK = BUILDER
+            .comment("Hard cap on breakBlock calls per quarry per tick (safety limit for server TPS)")
+            .defineInRange("012_maxBlockBreaksPerTick", 64, 1, 512);
 
     static {
         BUILDER.pop();
@@ -90,10 +132,10 @@ public final class ModConfig {
     }
 
     private static final ModConfigSpec.IntValue MODULE_BASE_EXTRA_RF = moduleExtraRf("module_base");
-    private static final ModConfigSpec.IntValue MODULE_SPEED_EXTRA_RF = moduleExtraRf("module_speed");
-    private static final ModConfigSpec.IntValue MODULE_DIGGER_EXTRA_RF = moduleExtraRf("module_digger");
-    private static final ModConfigSpec.IntValue MODULE_SILK_TOUCH_EXTRA_RF = moduleExtraRf("module_silktouch");
-    private static final ModConfigSpec.IntValue MODULE_FORTUNE_EXTRA_RF = moduleExtraRf("module_fortune");
+    private static final ModConfigSpec.IntValue MODULE_SPEED_EXTRA_RF = moduleExtraRf("module_speed", 1);
+    private static final ModConfigSpec.IntValue MODULE_DIGGER_EXTRA_RF = moduleExtraRf("module_digger", 1);
+    private static final ModConfigSpec.IntValue MODULE_SILK_TOUCH_EXTRA_RF = moduleExtraRf("module_silktouch", 8);
+    private static final ModConfigSpec.IntValue MODULE_FORTUNE_EXTRA_RF = moduleExtraRf("module_fortune", 3);
 
     private static final ModConfigSpec.IntValue MODULE_BASE_MAX_COUNT = moduleMaxCount("module_base");
     private static final ModConfigSpec.IntValue MODULE_SPEED_MAX_COUNT = moduleMaxCount("module_speed", 16);
@@ -106,8 +148,26 @@ public final class ModConfig {
             .defineInRange("2speed_tickMultiplier", 1.10, 1.0, 4.0);
 
     private static final ModConfigSpec.DoubleValue DIGGER_TICK_MULTIPLIER = BUILDER
-            .comment("Speed multiplier per digger module on non-ore blocks")
-            .defineInRange("2digger_tickMultiplier", 1.15, 1.0, 4.0);
+            .comment("Speed multiplier per digger module on non-ore blocks",
+                    "Tuned so 16 digger + 16 speed modules reach the 1-tick floor at default baseBreakTicks")
+            .defineInRange("2digger_tickMultiplier", 1.152, 1.0, 4.0);
+
+    static {
+        BUILDER.pop();
+        BUILDER.comment("Extra RF per block by installed drill tier (no drill / iron tier adds none)").push("101_drills");
+    }
+
+    private static final ModConfigSpec.IntValue DRILL_DIAMOND_EXTRA_RF = BUILDER
+            .comment("Extra RF per block with a diamond drill installed")
+            .defineInRange("0diamond_extraRf", 5, 0, Integer.MAX_VALUE);
+
+    private static final ModConfigSpec.IntValue DRILL_NETHERITE_EXTRA_RF = BUILDER
+            .comment("Extra RF per block with a netherite drill installed")
+            .defineInRange("1netherite_extraRf", 8, 0, Integer.MAX_VALUE);
+
+    private static final ModConfigSpec.IntValue DRILL_LASER_EXTRA_RF = BUILDER
+            .comment("Extra RF per block with a laser drill installed")
+            .defineInRange("2laser_extraRf", 12, 0, Integer.MAX_VALUE);
 
     static {
         BUILDER.pop();
@@ -116,9 +176,13 @@ public final class ModConfig {
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private static ModConfigSpec.IntValue moduleExtraRf(String key) {
+        return moduleExtraRf(key, 0);
+    }
+
+    private static ModConfigSpec.IntValue moduleExtraRf(String key, int defaultValue) {
         return BUILDER
                 .comment("Extra RF per block when " + key + " is installed")
-                .defineInRange("1" + key.substring("module_".length()) + "_extraRf", 0, 0, Integer.MAX_VALUE);
+                .defineInRange("1" + key.substring("module_".length()) + "_extraRf", defaultValue, 0, Integer.MAX_VALUE);
     }
 
     private static ModConfigSpec.IntValue moduleMaxCount(String key) {
@@ -133,9 +197,89 @@ public final class ModConfig {
 
     private ModConfig() {}
 
+    /** Peak RF draw per game tick at configured max drones with max modules and laser drill. */
+    public static int peakRfPerTickAtMaxLoad() {
+        int logicalWorkers = 1 + maxDrones();
+        int activeWorkers = Math.min(logicalWorkers, maxActiveMiningWorkers());
+        int blocksPerCompletion = blocksPerWorkerCompletion(logicalWorkers, activeWorkers);
+        int blocksPerTick = Math.min(maxBlockBreaksPerTick(), activeWorkers * blocksPerCompletion);
+        int maxRfPerBlock = totalRfPerBlock(
+                maxDiggerModules(),
+                maxSpeedModules(),
+                maxFortuneModules(),
+                false,
+                QuarryDrillType.DRILL_LASER);
+        return blocksPerTick * maxRfPerBlock;
+    }
+
+    public static int maxActiveMiningWorkers() {
+        return MAX_ACTIVE_MINING_WORKERS.get();
+    }
+
+    public static int maxBlockBreaksPerTick() {
+        return MAX_BLOCK_BREAKS_PER_TICK.get();
+    }
+
+    /** Blocks one simulated worker may break when its progress completes (preserves drone throughput). */
+    public static int blocksPerWorkerCompletion(int logicalWorkers, int activeWorkers) {
+        if (activeWorkers <= 0 || logicalWorkers <= 0) {
+            return 1;
+        }
+        return (logicalWorkers + activeWorkers - 1) / activeWorkers;
+    }
+
+    public static int energyBufferSecondsAtPeak() {
+        return ENERGY_BUFFER_SECONDS_AT_PEAK.get();
+    }
+
+    public static double energyBufferTierUpgradeRatio() {
+        return ENERGY_BUFFER_TIER_UPGRADE_RATIO.get();
+    }
+
+    public static int[] energyBufferTiers() {
+        if (cachedEnergyBufferTiers.length == 0) {
+            reloadEnergyBufferTiers();
+        }
+        return cachedEnergyBufferTiers;
+    }
+
+    public static void reloadEnergyBufferTiers() {
+        int[] parsed = ENERGY_BUFFER_TIERS.get().stream()
+                .mapToInt(value -> {
+                    try {
+                        return Integer.parseInt(value.trim());
+                    } catch (NumberFormatException ignored) {
+                        return -1;
+                    }
+                })
+                .filter(value -> value > 0)
+                .distinct()
+                .sorted()
+                .toArray();
+        cachedEnergyBufferTiers = parsed.length > 0 ? parsed : new int[] {100_000};
+    }
+
+    /**
+     * Walks buffer tiers upward while peak consumption reaches {@link #energyBufferTierUpgradeRatio()} of the current tier.
+     */
+    public static int resolveEnergyBufferCapacity(int peakRfPerTick) {
+        int[] tiers = energyBufferTiers();
+        long consumption = (long) peakRfPerTick * 20L * energyBufferSecondsAtPeak();
+        int index = 0;
+        while (index < tiers.length - 1) {
+            long upgradeThreshold = (long) Math.floor(tiers[index] * energyBufferTierUpgradeRatio());
+            if (consumption < upgradeThreshold) {
+                break;
+            }
+            index++;
+        }
+        return tiers[index];
+    }
+
     @SubscribeEvent
     static void onLoad(ModConfigEvent.Loading event) {
         if (event.getConfig().getSpec() == SPEC) {
+            reloadEnergyBufferTiers();
             QuarryMiningFilters.reload();
             AnotherQuarries.LOGGER.debug("Loaded {}", AnotherQuarries.MOD_ID + " config");
         }
@@ -144,16 +288,13 @@ public final class ModConfig {
     @SubscribeEvent
     static void onReload(ModConfigEvent.Reloading event) {
         if (event.getConfig().getSpec() == SPEC) {
+            reloadEnergyBufferTiers();
             QuarryMiningFilters.reload();
         }
     }
 
     public static int baseRfPerBlock() {
         return RF_PER_BLOCK.get();
-    }
-
-    public static int quarryEnergyBuffer() {
-        return QUARRY_ENERGY_BUFFER.get();
     }
 
     public static int quarryBaseRange() {
@@ -170,6 +311,20 @@ public final class ModConfig {
 
     public static int maxDrones() {
         return MAX_DRONES.get();
+    }
+
+    public static int equipmentGuiColumns() {
+        return EQUIPMENT_GUI_COLUMNS.get();
+    }
+
+    public static int equipmentDroneSlots() {
+        int drones = EQUIPMENT_DRONE_SLOTS.get();
+        int maxDrones = equipmentGuiColumns() - equipmentDrillSlots() - 3;
+        return Math.min(drones, Math.max(1, maxDrones));
+    }
+
+    public static int equipmentDrillSlots() {
+        return EQUIPMENT_DRILL_SLOTS.get();
     }
 
     public static int regenScanIntervalTicks() {
@@ -236,8 +391,17 @@ public final class ModConfig {
         };
     }
 
-    public static int totalRfPerBlock(int diggerCount, int speedCount, int fortuneCount, boolean silkTouch) {
-        int total = baseRfPerBlock();
+    public static int extraRfForDrill(net.unfamily.another_quarries.mining.QuarryDrillType drill) {
+        return switch (drill) {
+            case BASE -> 0;
+            case DIAMOND -> DRILL_DIAMOND_EXTRA_RF.get();
+            case NETHERITE -> DRILL_NETHERITE_EXTRA_RF.get();
+            case DRILL_LASER -> DRILL_LASER_EXTRA_RF.get();
+        };
+    }
+
+    public static int moduleRfComponent(int diggerCount, int speedCount, int fortuneCount, boolean silkTouch) {
+        int total = 0;
         total += diggerCount * extraRfFor(QuarryModules.DIGGER);
         total += speedCount * extraRfFor(QuarryModules.SPEED);
         total += fortuneCount * extraRfFor(QuarryModules.FORTUNE);
@@ -245,5 +409,14 @@ public final class ModConfig {
             total += extraRfFor(QuarryModules.SILK_TOUCH);
         }
         return total;
+    }
+
+    public static int totalRfPerBlock(
+            int diggerCount,
+            int speedCount,
+            int fortuneCount,
+            boolean silkTouch,
+            net.unfamily.another_quarries.mining.QuarryDrillType drill) {
+        return baseRfPerBlock() + moduleRfComponent(diggerCount, speedCount, fortuneCount, silkTouch) + extraRfForDrill(drill);
     }
 }

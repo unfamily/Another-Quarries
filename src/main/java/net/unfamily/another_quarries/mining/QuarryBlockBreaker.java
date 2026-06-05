@@ -41,7 +41,7 @@ public final class QuarryBlockBreaker {
             return false;
         }
         BlockState state = level.getBlockState(pos);
-        ItemStack tool = buildTool(ctx, level);
+        ItemStack tool = ctx.breakTool().isEmpty() ? buildTool(ctx, level) : ctx.breakTool();
         BlockEntity blockEntity = level.getBlockEntity(pos);
         List<ItemStack> drops = Block.getDrops(state, level, pos, blockEntity, null, tool);
         if (drops.isEmpty()) {
@@ -54,6 +54,10 @@ public final class QuarryBlockBreaker {
             insertIntoBuffer(buffer, drop);
         }
         return true;
+    }
+
+    public static ItemStack buildBreakTool(QuarryWorkContext ctx, ServerLevel level) {
+        return buildTool(ctx, level);
     }
 
     private static ItemStack buildTool(QuarryWorkContext ctx, ServerLevel level) {

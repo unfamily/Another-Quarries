@@ -1,7 +1,7 @@
 package net.unfamily.another_quarries.mining;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.item.ItemStack;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
 
 public record QuarryWorkContext(
@@ -12,5 +12,6 @@ public record QuarryWorkContext(
         boolean silkTouch,
         int rfPerBlock,
         Direction facing,
-        QuarryDiggingMode diggingMode) {
+        QuarryDiggingMode diggingMode,
+        ItemStack breakTool) {
 }

@@ -11,7 +11,8 @@ import net.neoforged.neoforge.common.world.chunk.TicketController;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 /**
- * Keeps mining target chunks loaded while the quarry chunk is active. Only current worker targets are forced.
+ * Force-loads chunks for active worker targets only while the quarry block is in a loaded chunk.
+ * Never force-loads the quarry's own chunk.
  */
 public final class QuarryChunkTickets {
     public static final TicketController CONTROLLER = new TicketController(
@@ -27,9 +28,18 @@ public final class QuarryChunkTickets {
     private QuarryChunkTickets() {}
 
     public static void sync(ServerLevel level, BlockPos owner, Iterable<BlockPos> activeTargets, LongOpenHashSet forcedChunks) {
+        if (!level.isLoaded(owner)) {
+            releaseAll(level, owner, forcedChunks);
+            return;
+        }
+
+        long ownerChunk = ChunkPos.pack(owner);
         LongOpenHashSet needed = new LongOpenHashSet();
         for (BlockPos target : activeTargets) {
-            needed.add(ChunkPos.pack(target));
+            long targetChunk = ChunkPos.pack(target);
+            if (targetChunk != ownerChunk) {
+                needed.add(targetChunk);
+            }
         }
 
         LongOpenHashSet toRemove = new LongOpenHashSet(forcedChunks);
