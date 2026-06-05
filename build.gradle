@@ -27,7 +27,9 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
+    maven {
+        url = "https://www.cursemaven.com"
+    }
 }
 
 base {
@@ -113,6 +115,31 @@ configurations {
 }
 
 dependencies {
+    def iskaLibLocalJar = file('libs/iska_lib-1.7.0.0.1.jar')
+    def iskaLibUseLocal = project.findProperty('iskaLibUseLocal')?.toString()?.toBoolean() == true
+    if (iskaLibUseLocal) {
+        if (!iskaLibLocalJar.exists()) {
+            throw new GradleException(
+                    "Missing ${iskaLibLocalJar.name}. Build Iskandert-Library (./gradlew jar), " +
+                    "copy build/libs/iska_lib-1.7.0.0.1.jar into libs/.")
+        }
+        implementation files(iskaLibLocalJar)
+        localRuntime files(iskaLibLocalJar)
+    } else {
+        implementation "curse.maven:iskanderts-library-1516512:8195552"
+        localRuntime "curse.maven:iskanderts-library-1516512:8195552"
+    }
+
+    tasks.register('syncIskaLibToRunMods', Copy) {
+        group = 'neoforge'
+        description = 'Copies local iska_lib JAR into run/mods for manual runs outside Gradle'
+        onlyIf { iskaLibUseLocal && iskaLibLocalJar.exists() }
+        from(iskaLibLocalJar)
+        into(layout.projectDirectory.dir('run/mods'))
+    }
+    tasks.named('runClient').configure { dependsOn('syncIskaLibToRunMods') }
+    tasks.named('runServer').configure { dependsOn('syncIskaLibToRunMods') }
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
@@ -143,10 +170,14 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
             neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
             mod_id                 : mod_id,
             mod_name               : mod_name,
             mod_license            : mod_license,
             mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description,
     ]
     inputs.properties replaceProperties
     expand replaceProperties

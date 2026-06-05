@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:block",
+  "random_sequence": "another_quarries:blocks/quarry",
+  "pools": [
+    {
+      "rolls": 1.0,
+      "bonus_rolls": 0.0,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "another_quarries:quarry"
+        }
+      ],
+      "conditions": [
+        {
+          "condition": "minecraft:survives_explosion"
+        },
+        {
+          "condition": "minecraft:match_tool",
+          "predicate": {
+            "tag": "minecraft:tools/pickaxes"
+          }
+        }
+      ]
+    }
+  ]
+}

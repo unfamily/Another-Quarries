@@ -1,0 +1,468 @@
+package net.unfamily.another_quarries.client.gui;
+
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.unfamily.another_quarries.AnotherQuarries;
+import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
+import net.unfamily.another_quarries.network.packet.QuarryDiggingModeC2SPacket;
+import net.unfamily.another_quarries.network.packet.QuarryPreviewToggleC2SPacket;
+import net.unfamily.another_quarries.network.packet.QuarryRebootC2SPacket;
+import net.unfamily.another_quarries.network.packet.QuarryRedstoneModeC2SPacket;
+import net.unfamily.another_quarries.network.packet.QuarrySizeC2SPacket;
+import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
+import net.unfamily.another_quarries.registry.ModItems;
+import net.unfamily.another_quarries.util.QuarryDiggingMode;
+import net.unfamily.iskalib.client.marker.MarkRenderer;
+import org.lwjgl.glfw.GLFW;
+
+import java.util.List;
+
+public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
+    private static final Identifier BACKGROUND = Identifier.fromNamespaceAndPath(
+            AnotherQuarries.MOD_ID, "textures/gui/backgrounds/quarry.png");
+    private static final Identifier ENERGY_BAR_TEXTURE =
+            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/energy_bar.png");
+
+    private static final int CLOSE_BUTTON_SIZE = 12;
+    private static final int CLOSE_BUTTON_X = QuarryMenu.GUI_WIDTH - CLOSE_BUTTON_SIZE - 5;
+    private static final int CLOSE_BUTTON_Y = 5;
+    private static final int TITLE_Y = 8;
+
+    private static final int BUTTON_W = 14;
+    private static final int BUTTON_H = 12;
+    private static final int GAP = 3;
+    private static final int REBOOT_BUTTON_W = 42;
+    private static final int REBOOT_BUTTON_H = 12;
+    private static final int REBOOT_BUTTON_X = CLOSE_BUTTON_X - GAP - REBOOT_BUTTON_W;
+    private static final int REBOOT_BUTTON_Y = CLOSE_BUTTON_Y;
+    /** Left column: preview + digging mode stacked; arrow cluster to the right (Collecting Crate pattern). */
+    private static final int PREVIEW_BUTTON_X = QuarryMenu.CONTROL_BAND_LEFT + 1;
+    private static final int PREVIEW_BUTTON_W = 46;
+    private static final int ARROW_GROUP_LEFT_X = PREVIEW_BUTTON_X + PREVIEW_BUTTON_W + GAP;
+    private static final int ARROW_GROUP_WIDTH = 3 * BUTTON_W + 2 * GAP;
+    private static final int ARROW_GROUP_CENTER_X = ARROW_GROUP_LEFT_X + ARROW_GROUP_WIDTH / 2;
+    private static final int ROW2_Y = QuarryMenu.CONTROL_BAND_TOP + 19;
+    private static final int ROW1_Y = ROW2_Y - BUTTON_H - 2;
+    private static final int PREVIEW_BUTTON_Y = ROW1_Y;
+    private static final int SIZE_LABEL_Y = ROW2_Y + BUTTON_H + 2;
+
+    private static final int DIGGING_MODE_X = PREVIEW_BUTTON_X;
+    private static final int DIGGING_MODE_Y = ROW2_Y;
+    private static final int DIGGING_MODE_W = PREVIEW_BUTTON_W;
+    private static final int ENERGY_BAR_WIDTH = 8;
+    private static final int ENERGY_BAR_HEIGHT = 32;
+    private static final int ENERGY_BAR_X = QuarryMenu.CONTROL_BAND_RIGHT - ENERGY_BAR_WIDTH - 5;
+    private static final int ENERGY_BAR_Y = QuarryMenu.CONTROL_BAND_TOP + 1;
+    private static final int REDSTONE_X = ENERGY_BAR_X - GAP - MachineGuiButtons.ICON_SIZE;
+    private static final int REDSTONE_Y = ENERGY_BAR_Y + (ENERGY_BAR_HEIGHT - MachineGuiButtons.ICON_SIZE) / 2;
+
+    /** Background still draws nine equipment frames; layout v3 uses six. */
+    private static final int LEGACY_EQUIPMENT_SLOT_COLUMNS = 9;
+    private static final int DISABLED_SLOT_OVERLAY = 0xA0000000;
+
+    private static final ItemStack GHOST_DRONE = new ItemStack(ModItems.DRONE.get());
+    private static final ItemStack GHOST_DRILL = new ItemStack(ModItems.DRILL_DIAMOND.get());
+    private static final ItemStack GHOST_DIGGER = new ItemStack(ModItems.MODULE_DIGGER.get());
+    private static final ItemStack GHOST_SPEED = new ItemStack(ModItems.MODULE_SPEED.get());
+    private static final ItemStack GHOST_FORTUNE = new ItemStack(ModItems.MODULE_FORTUNE.get());
+
+    private Button closeButton;
+    private Button rebootButton;
+    private Button buttonUp;
+    private Button buttonLeft;
+    private Button buttonRight;
+    private Button buttonDepth;
+    private Button buttonPreview;
+    private Button diggingModeButton;
+    private ItemIconButton redstoneButton;
+    private boolean previewButtonShowsHide;
+
+    public QuarryScreen(QuarryMenu menu, Inventory playerInventory, Component title) {
+        super(menu, playerInventory, title, QuarryMenu.GUI_WIDTH, QuarryMenu.GUI_HEIGHT);
+        this.inventoryLabelY = 10000;
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        this.leftPos = (this.width - this.imageWidth) / 2;
+        this.topPos = (this.height - this.imageHeight) / 2;
+
+        closeButton = Button.builder(Component.literal("✕"), b -> {
+            if (this.minecraft != null && this.minecraft.player != null) {
+                this.minecraft.player.closeContainer();
+            }
+        }).bounds(this.leftPos + CLOSE_BUTTON_X, this.topPos + CLOSE_BUTTON_Y, CLOSE_BUTTON_SIZE, CLOSE_BUTTON_SIZE).build();
+        addRenderableWidget(closeButton);
+
+        rebootButton = Button.builder(Component.translatable("gui.another_quarries.quarry.reboot"), b -> sendReboot())
+                .bounds(this.leftPos + REBOOT_BUTTON_X, this.topPos + REBOOT_BUTTON_Y, REBOOT_BUTTON_W, REBOOT_BUTTON_H)
+                .build();
+        rebootButton.setTooltip(Tooltip.create(Component.translatable("gui.another_quarries.quarry.reboot.tooltip")));
+        addRenderableWidget(rebootButton);
+
+        int upX = leftPos + ARROW_GROUP_LEFT_X + ARROW_GROUP_WIDTH / 2 - BUTTON_W / 2;
+        buttonUp = Button.builder(Component.literal("\u2191"), b -> sendSize(0, true))
+                .bounds(upX, topPos + ROW1_Y, BUTTON_W, BUTTON_H).build();
+        buttonLeft = Button.builder(Component.literal("\u2190"), b -> sendSize(1, true))
+                .bounds(leftPos + ARROW_GROUP_LEFT_X, topPos + ROW2_Y, BUTTON_W, BUTTON_H).build();
+        buttonDepth = Button.builder(Component.literal("-"), b -> sendSize(3, true))
+                .bounds(leftPos + ARROW_GROUP_LEFT_X + BUTTON_W + GAP, topPos + ROW2_Y, BUTTON_W, BUTTON_H).build();
+        buttonRight = Button.builder(Component.literal("\u2192"), b -> sendSize(2, true))
+                .bounds(leftPos + ARROW_GROUP_LEFT_X + 2 * (BUTTON_W + GAP), topPos + ROW2_Y, BUTTON_W, BUTTON_H).build();
+        addRenderableWidget(buttonUp);
+        addRenderableWidget(buttonLeft);
+        addRenderableWidget(buttonDepth);
+        addRenderableWidget(buttonRight);
+
+        buttonPreview = Button.builder(Component.translatable("gui.another_quarries.quarry.preview"), b -> togglePreview())
+                .bounds(leftPos + PREVIEW_BUTTON_X, topPos + PREVIEW_BUTTON_Y, PREVIEW_BUTTON_W, BUTTON_H).build();
+        buttonPreview.setTooltip(Tooltip.create(Component.translatable("gui.another_quarries.quarry.preview.tooltip")));
+        addRenderableWidget(buttonPreview);
+
+        diggingModeButton = Button.builder(diggingModeLabel(), b -> toggleDiggingMode())
+                .bounds(leftPos + DIGGING_MODE_X, topPos + DIGGING_MODE_Y, DIGGING_MODE_W, BUTTON_H).build();
+        addRenderableWidget(diggingModeButton);
+
+        redstoneButton = addRenderableWidget(MachineGuiButtons.redstoneIconButton(
+                leftPos + REDSTONE_X, topPos + REDSTONE_Y, b -> sendRedstone(false), menu::getRedstoneMode, true));
+
+        updateButtonTooltips();
+        previewButtonShowsHide = menu.isPreviewEnabled();
+        updatePreviewButtonLabel();
+        updateDiggingModeButton();
+        if (menu.isPreviewEnabled()) {
+            BlockPos pos = menu.getSyncedBlockPos();
+            if (!pos.equals(BlockPos.ZERO)) {
+                ClientPacketDistributor.sendToServer(new QuarryPreviewToggleC2SPacket(pos, true));
+            }
+        }
+    }
+
+    @Override
+    protected void containerTick() {
+        super.containerTick();
+        updateButtonTooltips();
+        if (menu.isPreviewEnabled() != previewButtonShowsHide) {
+            previewButtonShowsHide = menu.isPreviewEnabled();
+            updatePreviewButtonLabel();
+        }
+        updateDiggingModeButton();
+    }
+
+    private Component diggingModeLabel() {
+        return QuarryDiggingMode.fromId(menu.getDiggingModeId()) == QuarryDiggingMode.CHUNK
+                ? Component.translatable("gui.another_quarries.quarry.digging_mode.chunk")
+                : Component.translatable("gui.another_quarries.quarry.digging_mode.volume");
+    }
+
+    private void updateDiggingModeButton() {
+        if (diggingModeButton != null) {
+            diggingModeButton.setMessage(diggingModeLabel());
+            diggingModeButton.setTooltip(Tooltip.create(
+                    QuarryDiggingMode.fromId(menu.getDiggingModeId()) == QuarryDiggingMode.CHUNK
+                            ? Component.translatable("gui.another_quarries.quarry.digging_mode.chunk.tooltip")
+                            : Component.translatable("gui.another_quarries.quarry.digging_mode.volume.tooltip")));
+        }
+    }
+
+    private void updatePreviewButtonLabel() {
+        if (buttonPreview != null) {
+            buttonPreview.setMessage(Component.translatable(
+                    previewButtonShowsHide ? "gui.another_quarries.quarry.hide" : "gui.another_quarries.quarry.preview"));
+        }
+    }
+
+    private static Tooltip tooltipWithValue(String valueKey, int value) {
+        Component full = Component.translatable(valueKey, value)
+                .append(Component.literal("\n"))
+                .append(Component.translatable("gui.another_quarries.quarry.tooltip.left_click"))
+                .append(Component.literal("\n"))
+                .append(Component.translatable("gui.another_quarries.quarry.tooltip.right_click"))
+                .append(Component.literal("\n"))
+                .append(Component.translatable("gui.another_quarries.quarry.tooltip.shift_10"))
+                .append(Component.literal("\n"))
+                .append(Component.translatable("gui.another_quarries.quarry.tooltip.alt_ctrl_5"));
+        return Tooltip.create(full);
+    }
+
+    private void updateButtonTooltips() {
+        if (buttonUp != null) {
+            buttonUp.setTooltip(tooltipWithValue("gui.another_quarries.quarry.tooltip.up_value", menu.getAreaHeight()));
+        }
+        if (buttonLeft != null) {
+            buttonLeft.setTooltip(tooltipWithValue("gui.another_quarries.quarry.tooltip.left_value", menu.getSizeLeft()));
+        }
+        if (buttonRight != null) {
+            buttonRight.setTooltip(tooltipWithValue("gui.another_quarries.quarry.tooltip.right_value", menu.getSizeRight()));
+        }
+        if (buttonDepth != null) {
+            buttonDepth.setTooltip(tooltipWithValue("gui.another_quarries.quarry.tooltip.depth_value", menu.getAreaDepth()));
+        }
+    }
+
+    private int modifierStepAmount() {
+        if (minecraft == null || minecraft.getWindow() == null) {
+            return 1;
+        }
+        var window = minecraft.getWindow();
+        if (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT)) {
+            return 10;
+        }
+        if (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_CONTROL) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_CONTROL)
+                || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_ALT)) {
+            return 5;
+        }
+        return 1;
+    }
+
+    private void sendSize(int direction, boolean increment) {
+        BlockPos pos = menu.getSyncedBlockPos();
+        if (pos.equals(BlockPos.ZERO)) {
+            return;
+        }
+        ClientPacketDistributor.sendToServer(new QuarrySizeC2SPacket(pos, direction, increment, modifierStepAmount()));
+        playButtonSound();
+    }
+
+    private void togglePreview() {
+        BlockPos pos = menu.getSyncedBlockPos();
+        if (pos.equals(BlockPos.ZERO)) {
+            return;
+        }
+        playButtonSound();
+        boolean enabling = !menu.isPreviewEnabled();
+        MarkRenderer.getInstance().clearBillboardMarkersForOwner(pos);
+        ClientPacketDistributor.sendToServer(new QuarryPreviewToggleC2SPacket(pos, enabling));
+        previewButtonShowsHide = enabling;
+        updatePreviewButtonLabel();
+    }
+
+    private void toggleDiggingMode() {
+        BlockPos pos = menu.getSyncedBlockPos();
+        if (pos.equals(BlockPos.ZERO)) {
+            return;
+        }
+        ClientPacketDistributor.sendToServer(new QuarryDiggingModeC2SPacket(pos));
+        playButtonSound();
+    }
+
+    private void sendReboot() {
+        BlockPos pos = menu.getSyncedBlockPos();
+        if (pos.equals(BlockPos.ZERO)) {
+            return;
+        }
+        ClientPacketDistributor.sendToServer(new QuarryRebootC2SPacket(pos));
+        playButtonSound();
+    }
+
+    private void sendRedstone(boolean backward) {
+        BlockPos pos = menu.getSyncedBlockPos();
+        if (!pos.equals(BlockPos.ZERO)) {
+            ClientPacketDistributor.sendToServer(new QuarryRedstoneModeC2SPacket(pos, backward));
+            playButtonSound();
+        }
+    }
+
+    private void playButtonSound() {
+        if (minecraft != null && minecraft.gameMode != null) {
+            minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, 0);
+        }
+    }
+
+    private void drawCenteredText(GuiGraphicsExtractor guiGraphics, Component text, int centerX, int y, int color) {
+        guiGraphics.text(this.font, text, centerX - this.font.width(text) / 2, y, color, false);
+    }
+
+    @Override
+    public void extractBackground(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY, float partialTick) {
+        super.extractBackground(guiGraphics, mouseX, mouseY, partialTick);
+        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, this.leftPos, this.topPos, 0.0F, 0.0F,
+                this.imageWidth, this.imageHeight, QuarryMenu.GUI_WIDTH, QuarryMenu.GUI_HEIGHT);
+        renderGhostItems(guiGraphics);
+        renderDisabledEquipmentSlots(guiGraphics);
+    }
+
+    private void renderDisabledEquipmentSlots(GuiGraphicsExtractor guiGraphics) {
+        for (int i = QuarryMenu.DRONE_SLOT_INDEX; i < QuarryMenu.PLAYER_SLOT_START; i++) {
+            Slot slot = menu.getSlot(i);
+            if (slot != null && !slot.isActive()) {
+                renderDisabledSlotOverlay(guiGraphics, slot.x, slot.y);
+            }
+        }
+        for (int col = QuarryEquipmentSlots.SLOT_COUNT; col < LEGACY_EQUIPMENT_SLOT_COLUMNS; col++) {
+            renderDisabledSlotOverlay(guiGraphics, QuarryMenu.EQUIPMENT_SLOTS_X + col * 18, QuarryMenu.EQUIPMENT_SLOTS_Y);
+        }
+    }
+
+    private void renderDisabledSlotOverlay(GuiGraphicsExtractor guiGraphics, int slotX, int slotY) {
+        int x = this.leftPos + slotX;
+        int y = this.topPos + slotY;
+        guiGraphics.fill(x, y, x + 16, y + 16, DISABLED_SLOT_OVERLAY);
+    }
+
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY, float partialTick) {
+        super.extractRenderState(guiGraphics, mouseX, mouseY, partialTick);
+        renderEnergyBar(guiGraphics);
+        renderAreaLabel(guiGraphics);
+        renderButtonTooltips(guiGraphics, mouseX, mouseY);
+    }
+
+    @Override
+    protected void extractLabels(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
+        int titleWidth = this.font.width(this.title);
+        int titleX = (this.imageWidth - titleWidth) / 2;
+        guiGraphics.text(this.font, this.title, titleX, TITLE_Y, GuiTextColors.TITLE, false);
+    }
+
+    private void renderAreaLabel(GuiGraphicsExtractor guiGraphics) {
+        int labelCenterX = this.leftPos + ARROW_GROUP_CENTER_X;
+        Component sizeLabel = Component.translatable(
+                "gui.another_quarries.quarry.size",
+                menu.getSizeLeft(),
+                menu.getSizeRight(),
+                menu.getAreaWidth(),
+                menu.getAreaHeight(),
+                menu.getAreaDepth());
+        drawCenteredText(guiGraphics, sizeLabel, labelCenterX, this.topPos + SIZE_LABEL_Y, GuiTextColors.TITLE);
+    }
+
+    private void renderGhostItems(GuiGraphicsExtractor guiGraphics) {
+        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.DRONE_SLOT_INDEX), GHOST_DRONE, GuiGhostItem.DEFAULT_ARGB);
+        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.DRILL_SLOT_INDEX), GHOST_DRILL, GuiGhostItem.DEFAULT_ARGB);
+        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.DIGGER_MODULE_SLOT_INDEX), GHOST_DIGGER, GuiGhostItem.DEFAULT_ARGB);
+        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.SPEED_MODULE_SLOT_INDEX), GHOST_SPEED, GuiGhostItem.DEFAULT_ARGB);
+        GuiGhostItem.render(guiGraphics, leftPos, topPos, menu.getSlot(QuarryMenu.ENCHANT_MODULE_SLOT_INDEX), GHOST_FORTUNE, GuiGhostItem.DEFAULT_ARGB);
+    }
+
+    private void renderEnergyBar(GuiGraphicsExtractor guiGraphics) {
+        int energy = menu.getEnergyStored();
+        int maxEnergy = Math.max(1, menu.getMaxEnergyStored());
+        int barX = leftPos + ENERGY_BAR_X;
+        int barY = topPos + ENERGY_BAR_Y;
+        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, ENERGY_BAR_TEXTURE, barX, barY,
+                8.0F, 0.0F, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, 16, 32);
+        if (energy > 0) {
+            int energyHeight = (energy * ENERGY_BAR_HEIGHT) / maxEnergy;
+            int energyY = barY + (ENERGY_BAR_HEIGHT - energyHeight);
+            guiGraphics.blit(RenderPipelines.GUI_TEXTURED, ENERGY_BAR_TEXTURE, barX, energyY,
+                    0.0F, (float) (ENERGY_BAR_HEIGHT - energyHeight), ENERGY_BAR_WIDTH, energyHeight, 16, 32);
+        }
+    }
+
+    private void renderButtonTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
+        if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
+            MachineGuiButtons.renderTooltipLine(guiGraphics, font, mouseX, mouseY,
+                    MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), true));
+        }
+    }
+
+    @Override
+    public void extractTooltip(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
+        super.extractTooltip(guiGraphics, mouseX, mouseY);
+        int barX = leftPos + ENERGY_BAR_X;
+        int barY = topPos + ENERGY_BAR_Y;
+        if (mouseX >= barX && mouseX <= barX + ENERGY_BAR_WIDTH && mouseY >= barY && mouseY <= barY + ENERGY_BAR_HEIGHT) {
+            int energy = menu.getEnergyStored();
+            int maxEnergy = menu.getMaxEnergyStored();
+            int rfPerBlock = menu.getEstimatedRfPerBlock();
+            guiGraphics.setTooltipForNextFrame(
+                    this.font,
+                    List.of(
+                            Component.literal(String.format("%,d / %,d RF", energy, maxEnergy)).getVisualOrderText(),
+                            Component.literal(String.format("%,d RF per block", rfPerBlock)).getVisualOrderText()),
+                    DefaultTooltipPositioner.INSTANCE,
+                    mouseX,
+                    mouseY,
+                    true);
+        }
+        renderGhostTooltips(guiGraphics, mouseX, mouseY);
+    }
+
+    private void renderGhostTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
+        for (int i = QuarryMenu.DRONE_SLOT_INDEX; i < QuarryMenu.PLAYER_SLOT_START; i++) {
+            Slot slot = menu.getSlot(i);
+            if (slot != null && slot.getItem().isEmpty() && isMouseOverSlot(slot, mouseX, mouseY)) {
+                ItemStack ghost = ghostForSlot(i);
+                if (!ghost.isEmpty()) {
+                    guiGraphics.setTooltipForNextFrame(
+                            this.font,
+                            List.of(ghost.getHoverName().getVisualOrderText()),
+                            DefaultTooltipPositioner.INSTANCE,
+                            mouseX,
+                            mouseY,
+                            true);
+                }
+            }
+        }
+    }
+
+    private boolean isMouseOverSlot(Slot slot, int mouseX, int mouseY) {
+        int x = this.leftPos + slot.x;
+        int y = this.topPos + slot.y;
+        return mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16;
+    }
+
+    private ItemStack ghostForSlot(int menuIndex) {
+        if (menuIndex == QuarryMenu.DRONE_SLOT_INDEX) {
+            return GHOST_DRONE;
+        }
+        if (menuIndex == QuarryMenu.DRILL_SLOT_INDEX) {
+            return GHOST_DRILL;
+        }
+        if (menuIndex == QuarryMenu.DIGGER_MODULE_SLOT_INDEX) {
+            return GHOST_DIGGER;
+        }
+        if (menuIndex == QuarryMenu.SPEED_MODULE_SLOT_INDEX) {
+            return GHOST_SPEED;
+        }
+        if (menuIndex == QuarryMenu.ENCHANT_MODULE_SLOT_INDEX) {
+            return GHOST_FORTUNE;
+        }
+        return ItemStack.EMPTY;
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (event.button() == 1) {
+            double mouseX = event.x();
+            double mouseY = event.y();
+            if (buttonUp != null && buttonUp.isMouseOver(mouseX, mouseY)) {
+                sendSize(0, false);
+                return true;
+            }
+            if (buttonLeft != null && buttonLeft.isMouseOver(mouseX, mouseY)) {
+                sendSize(1, false);
+                return true;
+            }
+            if (buttonRight != null && buttonRight.isMouseOver(mouseX, mouseY)) {
+                sendSize(2, false);
+                return true;
+            }
+            if (buttonDepth != null && buttonDepth.isMouseOver(mouseX, mouseY)) {
+                sendSize(3, false);
+                return true;
+            }
+            if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
+                sendRedstone(true);
+                return true;
+            }
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+}

@@ -1,0 +1,21 @@
+{
+  "textures": {
+    "particle": "another_quarries:block/structure/structure_quarry",
+    "all": "another_quarries:block/structure/structure_quarry"
+  },
+  "elements": [
+    {
+      "name": "center",
+      "from": [5, 5, 5],
+      "to": [11, 11, 11],
+      "faces": {
+        "north": {"uv": [0, 0, 6, 6], "texture": "#all"},
+        "east": {"uv": [0, 0, 6, 6], "texture": "#all"},
+        "south": {"uv": [0, 0, 6, 6], "texture": "#all"},
+        "west": {"uv": [0, 0, 6, 6], "texture": "#all"},
+        "up": {"uv": [0, 0, 6, 6], "texture": "#all"},
+        "down": {"uv": [0, 0, 6, 6], "texture": "#all"}
+      }
+    }
+  ]
+}
