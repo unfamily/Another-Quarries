@@ -6,8 +6,12 @@
     " A "
   ],
   "key": {
-    "A": "#c:storage_blocks/amethyst",
-    "B": "another_quarries:module_base"
+    "A": {
+      "item": "minecraft:amethyst_block"
+    },
+    "B": {
+      "item": "another_quarries:module_base"
+    }
   },
   "result": {
     "id": "another_quarries:module_silktouch",

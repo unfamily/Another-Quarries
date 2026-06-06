@@ -5,7 +5,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -19,7 +19,7 @@ import net.unfamily.another_quarries.client.gui.QuarryMenu;
 public record QuarryRedstoneModeC2SPacket(BlockPos pos, boolean backward) implements CustomPacketPayload {
 
     public static final Type<QuarryRedstoneModeC2SPacket> TYPE = new Type<>(
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_redstone_mode"));
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_redstone_mode"));
 
     public static final StreamCodec<FriendlyByteBuf, QuarryRedstoneModeC2SPacket> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, QuarryRedstoneModeC2SPacket::pos,

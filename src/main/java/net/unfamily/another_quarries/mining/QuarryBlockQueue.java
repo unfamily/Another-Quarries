@@ -255,7 +255,7 @@ public final class QuarryBlockQueue {
         }
 
         belowLayer++;
-        int minY = level.getMinY();
+        int minY = level.getMinBuildHeight();
         int y = QuarryAreaLogic.belowVolumeStartY(quarryPos, facing) - belowLayer;
         return y >= minY;
     }
@@ -267,9 +267,9 @@ public final class QuarryBlockQueue {
             return;
         }
         int index = Math.min(Math.max(chunkIndex, 0), areaChunks.size() - 1);
-        ChunkPos chunk = ChunkPos.unpack(areaChunks.getLong(index));
-        activeChunkX = chunk.x();
-        activeChunkZ = chunk.z();
+        ChunkPos chunk = new ChunkPos(areaChunks.getLong(index));
+        activeChunkX = chunk.x;
+        activeChunkZ = chunk.z;
     }
 
     private void refreshCurrentLayer() {
@@ -369,7 +369,7 @@ public final class QuarryBlockQueue {
                 return;
             }
 
-            if (regenScanBelowY < level.getMinY()) {
+            if (regenScanBelowY < level.getMinBuildHeight()) {
                 regenScanActive = false;
                 return;
             }
@@ -477,7 +477,7 @@ public final class QuarryBlockQueue {
         if (phase != Phase.BELOW) {
             return false;
         }
-        int minY = level.getMinY();
+        int minY = level.getMinBuildHeight();
         int startY = QuarryAreaLogic.belowVolumeStartY(quarryPos, facing);
         return startY - belowLayer < minY && isCurrentLayerComplete(level, Set.of(), maxMiningLevel);
     }

@@ -4,7 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -18,7 +18,7 @@ import net.unfamily.another_quarries.client.gui.QuarryMenu;
 public record QuarryRebootC2SPacket(BlockPos pos) implements CustomPacketPayload {
 
     public static final Type<QuarryRebootC2SPacket> TYPE = new Type<>(
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_reboot"));
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_reboot"));
 
     public static final StreamCodec<FriendlyByteBuf, QuarryRebootC2SPacket> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, QuarryRebootC2SPacket::pos,

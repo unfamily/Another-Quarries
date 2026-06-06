@@ -1,30 +1,26 @@
 package net.unfamily.another_quarries.client.gui;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner;
-import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.unfamily.another_quarries.AnotherQuarries;
-import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
+import net.unfamily.another_quarries.config.ModConfig;
+import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
+import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.network.packet.QuarryDiggingModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryPreviewToggleC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRebootC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRedstoneModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarrySizeC2SPacket;
-import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
-import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
 import net.unfamily.iskalib.client.marker.MarkRenderer;
@@ -34,10 +30,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
-    private static final Identifier BACKGROUND = Identifier.fromNamespaceAndPath(
+    private static final ResourceLocation BACKGROUND = ResourceLocation.fromNamespaceAndPath(
             AnotherQuarries.MOD_ID, "textures/gui/backgrounds/quarry.png");
-    private static final Identifier ENERGY_BAR_TEXTURE =
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/energy_bar.png");
+    private static final ResourceLocation ENERGY_BAR_TEXTURE =
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/energy_bar.png");
 
     private static final int CLOSE_BUTTON_SIZE = 12;
     private static final int CLOSE_BUTTON_X = QuarryMenu.GUI_WIDTH - CLOSE_BUTTON_SIZE - 5;
@@ -59,7 +55,6 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private static final int REBOOT_BUTTON_Y = ROW2_Y;
     private static final int REDSTONE_X = REBOOT_BUTTON_X + (REBOOT_BUTTON_W - MachineGuiButtons.ICON_SIZE) / 2;
     private static final int REDSTONE_Y = REBOOT_BUTTON_Y - GAP - MachineGuiButtons.ICON_SIZE;
-    /** Left column: preview + digging mode stacked; arrow cluster to the right (Collecting Crate pattern). */
     private static final int PREVIEW_BUTTON_X = QuarryMenu.CONTROL_BAND_LEFT + 1;
     private static final int PREVIEW_BUTTON_W = 46;
     private static final int ARROW_GROUP_LEFT_X = PREVIEW_BUTTON_X + PREVIEW_BUTTON_W + GAP;
@@ -67,18 +62,18 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private static final int ARROW_GROUP_CENTER_X = ARROW_GROUP_LEFT_X + ARROW_GROUP_WIDTH / 2;
     private static final int PREVIEW_BUTTON_Y = ROW1_Y;
     private static final int SIZE_LABEL_Y = ROW2_Y + BUTTON_H + 2;
-
     private static final int DIGGING_MODE_X = PREVIEW_BUTTON_X;
     private static final int DIGGING_MODE_Y = ROW2_Y;
     private static final int DIGGING_MODE_W = PREVIEW_BUTTON_W;
-
     private static final int DISABLED_SLOT_OVERLAY = 0xA0000000;
 
     private static final ItemStack GHOST_DRONE = new ItemStack(ModItems.DRONE.get());
     private static final ItemStack GHOST_DRILL = new ItemStack(ModItems.DRILL_DIAMOND.get());
     private static final ItemStack GHOST_DIGGER = new ItemStack(ModItems.MODULE_DIGGER.get());
     private static final ItemStack GHOST_SPEED = new ItemStack(ModItems.MODULE_SPEED.get());
-    private static final ItemStack GHOST_FORTUNE = new ItemStack(ModItems.MODULE_FORTUNE.get());
+    private static final List<ItemStack> ENCHANT_GHOST_STACKS = QuarryModules.enchantGhostStacks();
+
+    private final GuiCycleTimer enchantGhostCycle = new GuiCycleTimer(() -> 1000);
 
     private Button closeButton;
     private Button rebootButton;
@@ -92,7 +87,9 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private boolean previewButtonShowsHide;
 
     public QuarryScreen(QuarryMenu menu, Inventory playerInventory, Component title) {
-        super(menu, playerInventory, title, QuarryMenu.GUI_WIDTH, QuarryMenu.GUI_HEIGHT);
+        super(menu, playerInventory, title);
+        this.imageWidth = QuarryMenu.GUI_WIDTH;
+        this.imageHeight = QuarryMenu.GUI_HEIGHT;
         this.inventoryLabelY = 10000;
     }
 
@@ -151,7 +148,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (menu.isPreviewEnabled()) {
             BlockPos pos = menu.getSyncedBlockPos();
             if (!pos.equals(BlockPos.ZERO)) {
-                ClientPacketDistributor.sendToServer(new QuarryPreviewToggleC2SPacket(pos, true));
+                PacketDistributor.sendToServer(new QuarryPreviewToggleC2SPacket(pos, true));
             }
         }
     }
@@ -173,7 +170,6 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         }
         boolean forcedChunk = menu.requiresChunkDiggingMode();
         diggingModeButton.active = !forcedChunk;
-
         boolean chunkMode = menu.getDiggingModeId() == QuarryDiggingMode.CHUNK.getId();
         if (chunkMode) {
             diggingModeButton.setMessage(Component.translatable("gui.another_quarries.quarry.digging_mode.chunk"));
@@ -227,7 +223,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (minecraft == null || minecraft.getWindow() == null) {
             return 1;
         }
-        var window = minecraft.getWindow();
+        var window = minecraft.getWindow().getWindow();
         if (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT)) {
             return 10;
         }
@@ -243,7 +239,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (pos.equals(BlockPos.ZERO)) {
             return;
         }
-        ClientPacketDistributor.sendToServer(new QuarrySizeC2SPacket(pos, direction, increment, modifierStepAmount()));
+        PacketDistributor.sendToServer(new QuarrySizeC2SPacket(pos, direction, increment, modifierStepAmount()));
         playButtonSound();
     }
 
@@ -255,7 +251,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         playButtonSound();
         boolean enabling = !menu.isPreviewEnabled();
         MarkRenderer.getInstance().clearBillboardMarkersForOwner(pos);
-        ClientPacketDistributor.sendToServer(new QuarryPreviewToggleC2SPacket(pos, enabling));
+        PacketDistributor.sendToServer(new QuarryPreviewToggleC2SPacket(pos, enabling));
         previewButtonShowsHide = enabling;
         updatePreviewButtonLabel();
     }
@@ -265,7 +261,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (pos.equals(BlockPos.ZERO)) {
             return;
         }
-        ClientPacketDistributor.sendToServer(new QuarryRebootC2SPacket(pos));
+        PacketDistributor.sendToServer(new QuarryRebootC2SPacket(pos));
         playButtonSound();
     }
 
@@ -274,14 +270,14 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (pos.equals(BlockPos.ZERO)) {
             return;
         }
-        ClientPacketDistributor.sendToServer(new QuarryDiggingModeC2SPacket(pos));
+        PacketDistributor.sendToServer(new QuarryDiggingModeC2SPacket(pos));
         playButtonSound();
     }
 
     private void sendRedstone(boolean backward) {
         BlockPos pos = menu.getSyncedBlockPos();
         if (!pos.equals(BlockPos.ZERO)) {
-            ClientPacketDistributor.sendToServer(new QuarryRedstoneModeC2SPacket(pos, backward));
+            PacketDistributor.sendToServer(new QuarryRedstoneModeC2SPacket(pos, backward));
             playButtonSound();
         }
     }
@@ -292,20 +288,39 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         }
     }
 
-    private void drawCenteredText(GuiGraphicsExtractor guiGraphics, Component text, int centerX, int y, int color) {
-        guiGraphics.text(this.font, text, centerX - this.font.width(text) / 2, y, color, false);
-    }
-
     @Override
-    public void extractBackground(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY, float partialTick) {
-        super.extractBackground(guiGraphics, mouseX, mouseY, partialTick);
-        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, this.leftPos, this.topPos, 0.0F, 0.0F,
-                this.imageWidth, this.imageHeight, QuarryMenu.GUI_WIDTH, QuarryMenu.GUI_HEIGHT);
+    protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
+        guiGraphics.blit(BACKGROUND, this.leftPos, this.topPos, 0, 0, this.imageWidth, this.imageHeight,
+                QuarryMenu.GUI_WIDTH, QuarryMenu.GUI_HEIGHT);
         renderGhostItems(guiGraphics);
         renderDisabledEquipmentSlots(guiGraphics);
     }
 
-    private void renderDisabledEquipmentSlots(GuiGraphicsExtractor guiGraphics) {
+    @Override
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
+        renderEnergyBar(guiGraphics);
+        renderAreaLabel(guiGraphics);
+        if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
+            MachineGuiButtons.renderTooltipLine(guiGraphics, font, mouseX, mouseY,
+                    MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), false));
+        }
+        renderEnergyTooltip(guiGraphics, mouseX, mouseY);
+        renderGhostTooltips(guiGraphics, mouseX, mouseY);
+    }
+
+    @Override
+    protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        int titleWidth = this.font.width(this.title);
+        int titleX = (this.imageWidth - titleWidth) / 2;
+        guiGraphics.drawString(this.font, this.title, titleX, TITLE_Y, 0x404040, false);
+    }
+
+    private void drawCenteredText(GuiGraphics guiGraphics, Component text, int centerX, int y, int color) {
+        guiGraphics.drawString(this.font, text, centerX - this.font.width(text) / 2, y, color, false);
+    }
+
+    private void renderDisabledEquipmentSlots(GuiGraphics guiGraphics) {
         for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
             Slot slot = menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot));
             if (slot != null && !slot.isActive()) {
@@ -317,28 +332,13 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         }
     }
 
-    private void renderDisabledSlotOverlay(GuiGraphicsExtractor guiGraphics, int slotX, int slotY) {
+    private void renderDisabledSlotOverlay(GuiGraphics guiGraphics, int slotX, int slotY) {
         int x = this.leftPos + slotX;
         int y = this.topPos + slotY;
         guiGraphics.fill(x, y, x + 16, y + 16, DISABLED_SLOT_OVERLAY);
     }
 
-    @Override
-    public void extractRenderState(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY, float partialTick) {
-        super.extractRenderState(guiGraphics, mouseX, mouseY, partialTick);
-        renderEnergyBar(guiGraphics);
-        renderAreaLabel(guiGraphics);
-        renderButtonTooltips(guiGraphics, mouseX, mouseY);
-    }
-
-    @Override
-    protected void extractLabels(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
-        int titleWidth = this.font.width(this.title);
-        int titleX = (this.imageWidth - titleWidth) / 2;
-        guiGraphics.text(this.font, this.title, titleX, TITLE_Y, GuiTextColors.TITLE, false);
-    }
-
-    private void renderAreaLabel(GuiGraphicsExtractor guiGraphics) {
+    private void renderAreaLabel(GuiGraphics guiGraphics) {
         int labelCenterX = this.leftPos + ARROW_GROUP_CENTER_X;
         Component sizeLabel = Component.translatable(
                 "gui.another_quarries.quarry.size",
@@ -347,49 +347,45 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
                 menu.getAreaWidth(),
                 menu.getAreaHeight(),
                 menu.getAreaDepth());
-        drawCenteredText(guiGraphics, sizeLabel, labelCenterX, this.topPos + SIZE_LABEL_Y, GuiTextColors.TITLE);
+        drawCenteredText(guiGraphics, sizeLabel, labelCenterX, this.topPos + SIZE_LABEL_Y, 0x404040);
     }
 
-    private void renderGhostItems(GuiGraphicsExtractor guiGraphics) {
+    private void renderGhostItems(GuiGraphics guiGraphics) {
         for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
-            ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
-            if (!ghost.isEmpty()) {
-                GuiGhostItem.render(
+            Slot slot = menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot));
+            if (equipmentSlot == QuarryEquipmentSlots.enchantModuleSlot()) {
+                GuiGhostItem.renderCycling(
                         guiGraphics,
                         leftPos,
                         topPos,
-                        menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot)),
-                        ghost,
+                        slot,
+                        ENCHANT_GHOST_STACKS,
+                        enchantGhostCycle,
                         GuiGhostItem.DEFAULT_ARGB);
+                continue;
+            }
+            ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
+            if (!ghost.isEmpty()) {
+                GuiGhostItem.render(guiGraphics, leftPos, topPos, slot, ghost, GuiGhostItem.DEFAULT_ARGB);
             }
         }
     }
 
-    private void renderEnergyBar(GuiGraphicsExtractor guiGraphics) {
+    private void renderEnergyBar(GuiGraphics guiGraphics) {
         int energy = menu.getEnergyStored();
         int maxEnergy = Math.max(1, menu.getMaxEnergyStored());
         int barX = leftPos + ENERGY_BAR_X;
         int barY = topPos + ENERGY_BAR_Y;
-        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, ENERGY_BAR_TEXTURE, barX, barY,
-                8.0F, 0.0F, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, 16, 32);
+        guiGraphics.blit(ENERGY_BAR_TEXTURE, barX, barY, 8, 0, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, 16, 32);
         if (energy > 0) {
             int energyHeight = (energy * ENERGY_BAR_HEIGHT) / maxEnergy;
             int energyY = barY + (ENERGY_BAR_HEIGHT - energyHeight);
-            guiGraphics.blit(RenderPipelines.GUI_TEXTURED, ENERGY_BAR_TEXTURE, barX, energyY,
-                    0.0F, (float) (ENERGY_BAR_HEIGHT - energyHeight), ENERGY_BAR_WIDTH, energyHeight, 16, 32);
+            guiGraphics.blit(ENERGY_BAR_TEXTURE, barX, energyY, 0, ENERGY_BAR_HEIGHT - energyHeight,
+                    ENERGY_BAR_WIDTH, energyHeight, 16, 32);
         }
     }
 
-    private void renderButtonTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
-        if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
-            MachineGuiButtons.renderTooltipLine(guiGraphics, font, mouseX, mouseY,
-                    MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), false));
-        }
-    }
-
-    @Override
-    public void extractTooltip(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
-        super.extractTooltip(guiGraphics, mouseX, mouseY);
+    private void renderEnergyTooltip(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         int barX = leftPos + ENERGY_BAR_X;
         int barY = topPos + ENERGY_BAR_Y;
         if (mouseX >= barX && mouseX <= barX + ENERGY_BAR_WIDTH && mouseY >= barY && mouseY <= barY + ENERGY_BAR_HEIGHT) {
@@ -406,31 +402,24 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
                 lines.add(Component.translatable("gui.another_quarries.quarry.rf_per_block_breakdown",
                         String.format("%,d", baseRf), String.format("%,d", rfPerBlock - baseRf)));
             }
-            guiGraphics.setTooltipForNextFrame(
-                    this.font,
-                    lines.stream().map(Component::getVisualOrderText).toList(),
-                    DefaultTooltipPositioner.INSTANCE,
-                    mouseX,
-                    mouseY,
-                    true);
+            guiGraphics.renderComponentTooltip(this.font, lines, mouseX, mouseY);
         }
-        renderGhostTooltips(guiGraphics, mouseX, mouseY);
     }
 
-    private void renderGhostTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
+    private void renderGhostTooltips(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
             Slot slot = menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot));
-            if (slot != null && slot.getItem().isEmpty() && isMouseOverSlot(slot, mouseX, mouseY)) {
-                ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
-                if (!ghost.isEmpty()) {
-                    guiGraphics.setTooltipForNextFrame(
-                            this.font,
-                            List.of(ghost.getHoverName().getVisualOrderText()),
-                            DefaultTooltipPositioner.INSTANCE,
-                            mouseX,
-                            mouseY,
-                            true);
-                }
+            if (slot == null || !slot.getItem().isEmpty() || !isMouseOverSlot(slot, mouseX, mouseY)) {
+                continue;
+            }
+            if (equipmentSlot == QuarryEquipmentSlots.enchantModuleSlot()) {
+                ItemStack ghost = enchantGhostCycle.getOrDefault(ENCHANT_GHOST_STACKS, ENCHANT_GHOST_STACKS.get(0));
+                guiGraphics.renderTooltip(this.font, ghost, mouseX, mouseY);
+                continue;
+            }
+            ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
+            if (!ghost.isEmpty()) {
+                guiGraphics.renderTooltip(this.font, ghost, mouseX, mouseY);
             }
         }
     }
@@ -454,25 +443,12 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (equipmentSlot == QuarryEquipmentSlots.speedModuleSlot()) {
             return GHOST_SPEED;
         }
-        if (equipmentSlot == QuarryEquipmentSlots.enchantModuleSlot()) {
-            return GHOST_FORTUNE;
-        }
-        return ItemStack.EMPTY;
-    }
-
-    private ItemStack ghostForSlot(int menuIndex) {
-        int equipmentSlot = menuIndex - QuarryMenu.BUFFER_SLOT_COUNT;
-        if (equipmentSlot >= 0 && equipmentSlot < QuarryEquipmentSlots.slotCount()) {
-            return ghostForEquipmentSlot(equipmentSlot);
-        }
         return ItemStack.EMPTY;
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        if (event.button() == 1) {
-            double mouseX = event.x();
-            double mouseY = event.y();
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 1) {
             if (buttonUp != null && buttonUp.isMouseOver(mouseX, mouseY)) {
                 sendSize(0, false);
                 return true;
@@ -494,6 +470,6 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
                 return true;
             }
         }
-        return super.mouseClicked(event, doubleClick);
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 }

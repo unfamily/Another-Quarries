@@ -16,7 +16,7 @@ import java.util.List;
 
 public final class QuarryBlockBreaker {
     private static final TagKey<net.minecraft.world.level.block.Block> ORES =
-            TagKey.create(Registries.BLOCK, net.minecraft.resources.Identifier.withDefaultNamespace("ores"));
+            TagKey.create(Registries.BLOCK, net.minecraft.resources.ResourceLocation.withDefaultNamespace("ores"));
 
     private QuarryBlockBreaker() {}
 

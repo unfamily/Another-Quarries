@@ -1,7 +1,11 @@
 package net.unfamily.another_quarries.mining;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -600,50 +604,76 @@ public final class QuarryMiningEngine {
         return targets;
     }
 
-    public void save(net.minecraft.world.level.storage.ValueOutput output) {
-        output.putInt("QueueCursor", queueBuilt ? queue.getCursor() : layerCursor);
-        output.putInt("VolumeDy", queueBuilt ? queue.getVolumeDy() : volumeDy);
-        output.putInt("QueueSignature", queueSignature);
-        output.putBoolean("QueueBuilt", queueBuilt);
-        output.putInt("ActiveChunkIndex", activeChunkIndex);
-        output.putString("MiningPhase", miningPhase.name());
-        output.putInt("BelowLayer", belowLayer);
-        output.putInt("RegenScanCooldown", regenScanCooldown);
-        frameController.save(output);
-        var list = output.list("MiningWorkers", WorkerState.CODEC);
+    public void save(CompoundTag tag, HolderLookup.Provider registries) {
+        tag.putInt("QueueCursor", queueBuilt ? queue.getCursor() : layerCursor);
+        tag.putInt("VolumeDy", queueBuilt ? queue.getVolumeDy() : volumeDy);
+        tag.putInt("QueueSignature", queueSignature);
+        tag.putBoolean("QueueBuilt", queueBuilt);
+        tag.putInt("ActiveChunkIndex", activeChunkIndex);
+        tag.putString("MiningPhase", miningPhase.name());
+        tag.putInt("BelowLayer", belowLayer);
+        tag.putInt("RegenScanCooldown", regenScanCooldown);
+        CompoundTag frameTag = new CompoundTag();
+        frameController.save(frameTag);
+        tag.put("Frame", frameTag);
+        ListTag workerList = new ListTag();
         for (WorkerState worker : workers) {
-            list.add(worker);
+            CompoundTag workerTag = new CompoundTag();
+            workerTag.putInt("DrillIndex", worker.drillIndex);
+            if (worker.target != null) {
+                workerTag.putInt("TargetX", worker.target.getX());
+                workerTag.putInt("TargetY", worker.target.getY());
+                workerTag.putInt("TargetZ", worker.target.getZ());
+            }
+            workerTag.putInt("Progress", worker.progress);
+            workerTag.putInt("RequiredTicks", worker.requiredTicks);
+            workerList.add(workerTag);
         }
-        if (list.isEmpty()) {
-            output.discard("MiningWorkers");
+        if (!workerList.isEmpty()) {
+            tag.put("MiningWorkers", workerList);
         }
     }
 
-    public void load(net.minecraft.world.level.storage.ValueInput input) {
-        queueSignature = input.getIntOr("QueueSignature", 0);
-        queueBuilt = input.getBooleanOr("QueueBuilt", false);
-        activeChunkIndex = input.getIntOr("ActiveChunkIndex", 0);
+    public void load(CompoundTag tag, HolderLookup.Provider registries) {
+        queueSignature = tag.contains("QueueSignature") ? tag.getInt("QueueSignature") : 0;
+        queueBuilt = tag.getBoolean("QueueBuilt");
+        activeChunkIndex = tag.contains("ActiveChunkIndex") ? tag.getInt("ActiveChunkIndex") : 0;
         try {
             miningPhase = QuarryBlockQueue.Phase.valueOf(
-                    input.getStringOr("MiningPhase", QuarryBlockQueue.Phase.CLEAR_VOLUME.name()));
+                    tag.contains("MiningPhase") ? tag.getString("MiningPhase") : QuarryBlockQueue.Phase.CLEAR_VOLUME.name());
         } catch (IllegalArgumentException ignored) {
             miningPhase = QuarryBlockQueue.Phase.CLEAR_VOLUME;
         }
-        volumeDy = input.getIntOr("VolumeDy", -1);
-        belowLayer = input.getIntOr("BelowLayer", 0);
-        layerCursor = input.getIntOr("QueueCursor", 0);
-        regenScanCooldown = input.getIntOr("RegenScanCooldown", ModConfig.regenScanIntervalTicks());
+        volumeDy = tag.contains("VolumeDy") ? tag.getInt("VolumeDy") : -1;
+        belowLayer = tag.contains("BelowLayer") ? tag.getInt("BelowLayer") : 0;
+        layerCursor = tag.contains("QueueCursor") ? tag.getInt("QueueCursor") : 0;
+        regenScanCooldown = tag.contains("RegenScanCooldown") ? tag.getInt("RegenScanCooldown") : ModConfig.regenScanIntervalTicks();
         int interval = ModConfig.regenScanIntervalTicks();
         if (interval > 1) {
             regenScanCooldown = Math.max(
                     regenScanCooldown,
                     Math.floorMod(quarry.getBlockPos().hashCode(), interval));
         }
-        frameController.load(input);
+        if (tag.contains("Frame", Tag.TAG_COMPOUND)) {
+            frameController.load(tag.getCompound("Frame"));
+        } else {
+            frameController.load(tag);
+        }
         queue = QuarryBlockQueue.empty();
         workers.clear();
-        for (WorkerState worker : input.listOrEmpty("MiningWorkers", WorkerState.CODEC)) {
-            workers.add(worker);
+        if (tag.contains("MiningWorkers", Tag.TAG_LIST)) {
+            ListTag list = tag.getList("MiningWorkers", Tag.TAG_COMPOUND);
+            for (int i = 0; i < list.size(); i++) {
+                CompoundTag workerTag = list.getCompound(i);
+                BlockPos target = workerTag.contains("TargetX")
+                        ? new BlockPos(workerTag.getInt("TargetX"), workerTag.getInt("TargetY"), workerTag.getInt("TargetZ"))
+                        : null;
+                workers.add(new WorkerState(
+                        workerTag.getInt("DrillIndex"),
+                        target,
+                        workerTag.getInt("Progress"),
+                        workerTag.getInt("RequiredTicks")));
+            }
         }
     }
 

@@ -1,7 +1,7 @@
 package net.unfamily.another_quarries.mining;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.unfamily.another_quarries.AnotherQuarries;
@@ -16,7 +16,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
  */
 public final class QuarryChunkTickets {
     public static final TicketController CONTROLLER = new TicketController(
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_mining"),
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_mining"),
             (level, helper) -> {
                 for (BlockPos owner : helper.getBlockTickets().keySet()) {
                     if (!(level.getBlockEntity(owner) instanceof QuarryBlockEntity)) {
@@ -33,10 +33,10 @@ public final class QuarryChunkTickets {
             return;
         }
 
-        long ownerChunk = ChunkPos.pack(owner);
+        long ownerChunk = ChunkPos.asLong(owner.getX() >> 4, owner.getZ() >> 4);
         LongOpenHashSet needed = new LongOpenHashSet();
         for (BlockPos target : activeTargets) {
-            long targetChunk = ChunkPos.pack(target);
+            long targetChunk = ChunkPos.asLong(target.getX() >> 4, target.getZ() >> 4);
             if (targetChunk != ownerChunk) {
                 needed.add(targetChunk);
             }
@@ -45,8 +45,8 @@ public final class QuarryChunkTickets {
         LongOpenHashSet toRemove = new LongOpenHashSet(forcedChunks);
         toRemove.removeAll(needed);
         for (long chunk : toRemove) {
-            ChunkPos chunkPos = ChunkPos.unpack(chunk);
-            CONTROLLER.forceChunk(level, owner, chunkPos.x(), chunkPos.z(), false, false);
+            ChunkPos chunkPos = new ChunkPos(chunk);
+            CONTROLLER.forceChunk(level, owner, chunkPos.x, chunkPos.z, false, false);
             forcedChunks.remove(chunk);
         }
 
@@ -54,8 +54,8 @@ public final class QuarryChunkTickets {
             if (forcedChunks.contains(chunk)) {
                 continue;
             }
-            ChunkPos chunkPos = ChunkPos.unpack(chunk);
-            if (CONTROLLER.forceChunk(level, owner, chunkPos.x(), chunkPos.z(), true, false)) {
+            ChunkPos chunkPos = new ChunkPos(chunk);
+            if (CONTROLLER.forceChunk(level, owner, chunkPos.x, chunkPos.z, true, false)) {
                 forcedChunks.add(chunk);
             }
         }
@@ -63,8 +63,8 @@ public final class QuarryChunkTickets {
 
     public static void releaseAll(ServerLevel level, BlockPos owner, LongOpenHashSet forcedChunks) {
         for (long chunk : forcedChunks.toLongArray()) {
-            ChunkPos chunkPos = ChunkPos.unpack(chunk);
-            CONTROLLER.forceChunk(level, owner, chunkPos.x(), chunkPos.z(), false, false);
+            ChunkPos chunkPos = new ChunkPos(chunk);
+            CONTROLLER.forceChunk(level, owner, chunkPos.x, chunkPos.z, false, false);
         }
         forcedChunks.clear();
     }

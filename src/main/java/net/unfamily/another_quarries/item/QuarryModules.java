@@ -64,6 +64,12 @@ public enum QuarryModules {
         return Optional.empty();
     }
 
+    public static List<ItemStack> enchantGhostStacks() {
+        return List.of(
+                new ItemStack(ModItems.MODULE_FORTUNE.get()),
+                new ItemStack(ModItems.MODULE_SILK_TOUCH.get()));
+    }
+
     public static List<ItemStack> ghostCycleStacks() {
         return Arrays.stream(values()).map(m -> new ItemStack(m.getItem())).toList();
     }

@@ -9,27 +9,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.math.Transformation;
 
-import net.minecraft.client.renderer.block.dispatch.BlockModelRotation;
-import net.minecraft.client.renderer.block.dispatch.ModelState;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.block.model.BlockElement;
+import net.minecraft.client.renderer.block.model.BlockModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.client.resources.model.ModelBaker;
-import net.minecraft.client.resources.model.ModelDebugName;
-import net.minecraft.client.resources.model.cuboid.CuboidFace;
-import net.minecraft.client.resources.model.cuboid.CuboidModelElement;
-import net.minecraft.client.resources.model.geometry.BakedQuad;
-import net.minecraft.client.resources.model.sprite.Material;
+import net.minecraft.client.resources.model.Material;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.Identifier;
-import net.neoforged.neoforge.client.model.UnbakedElementsHelper;
-import net.neoforged.neoforge.client.model.quad.QuadTransforms;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.client.model.ExtendedBlockModelDeserializer;
+import net.neoforged.neoforge.client.model.IQuadTransformer;
+import net.neoforged.neoforge.client.model.QuadTransformers;
+import net.neoforged.neoforge.client.model.SimpleModelState;
+import net.neoforged.neoforge.client.model.geometry.UnbakedGeometryHelper;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.registry.ModBlocks;
 
@@ -40,15 +37,8 @@ import org.joml.Quaternionf;
  * Baked quads for structure_quarry composite templates ({@code structure_quarry_default} + {@code structure_quarry_line}).
  */
 public final class CompositeGeometry {
-    private static final Gson ELEMENT_GSON = new GsonBuilder()
-            .registerTypeAdapter(CuboidModelElement.class, new CuboidModelElement.Deserializer())
-            .registerTypeAdapter(CuboidFace.class, new CuboidFace.Deserializer())
-            .create();
-    private static final ModelDebugName DEBUG_NAME = () -> "structure_quarry_composite";
-
     private final Map<String, List<BakedQuad>> defaultByName;
     private final List<BakedQuad> lineCenterQuadsIdentity;
-    /** All quads from the line model (center + end caps), for item display — same as AD {@code DuctCompositeGeometry#lineAllQuads}. */
     private final List<BakedQuad> lineAllQuadsIdentity;
     private final boolean built;
 
@@ -64,41 +54,36 @@ public final class CompositeGeometry {
     }
 
     public static CompositeGeometry bake(
-            Function<Identifier, TextureAtlasSprite> textureGetter,
-            Identifier modelDefaultId,
-            Identifier modelLineId,
-            Identifier textureId) {
-        ModelBaker baker = CompositeModelBaker.fromTextureGetter(textureGetter);
+            ResourceLocation modelDefaultId,
+            ResourceLocation modelLineId,
+            String textureRlString,
+            Function<Material, TextureAtlasSprite> spriteGetter) {
         Map<String, List<BakedQuad>> byName = new HashMap<>();
         List<BakedQuad> lineCenter = List.of();
         try {
-            String textureRef = textureId.toString();
-            ParsedElements defParsed = readElements(modelDefaultId, textureRef);
-            ParsedElements lineParsed = readElements(modelLineId, textureRef);
-            ModelState identity = BlockModelRotation.IDENTITY;
-            var materialGetter = materialGetter(baker, textureId);
-
-            for (int i = 0; i < defParsed.elements().size(); i++) {
-                String name = i < defParsed.elementNames().size() ? defParsed.elementNames().get(i) : null;
+            ParsedModel defParsed = readModel(modelDefaultId, textureRlString);
+            ParsedModel lineParsed = readModel(modelLineId, textureRlString);
+            var identity = new SimpleModelState(Transformation.identity());
+            List<BlockElement> defElements = defParsed.model().getElements();
+            List<String> defNames = defParsed.elementNames();
+            for (int i = 0; i < defElements.size(); i++) {
+                String name = i < defNames.size() ? defNames.get(i) : null;
                 if (name == null) {
                     continue;
                 }
-                List<BakedQuad> quads = UnbakedElementsHelper.bakeElements(
-                        baker,
-                        List.of(defParsed.elements().get(i)),
-                        materialGetter,
-                        identity);
+                List<BakedQuad> quads = UnbakedGeometryHelper.bakeElements(List.of(defElements.get(i)), spriteGetter, identity);
                 byName.put(name, quads);
             }
-
-            List<CuboidModelElement> lineCenterElements = new ArrayList<>();
-            for (int i = 0; i < lineParsed.elements().size(); i++) {
-                if (i < lineParsed.elementNames().size() && "center".equals(lineParsed.elementNames().get(i))) {
-                    lineCenterElements.add(lineParsed.elements().get(i));
+            List<BlockElement> lineEls = lineParsed.model().getElements();
+            List<String> lineNames = lineParsed.elementNames();
+            List<BlockElement> lineCenterElements = new ArrayList<>();
+            for (int i = 0; i < lineEls.size(); i++) {
+                if (i < lineNames.size() && "center".equals(lineNames.get(i))) {
+                    lineCenterElements.add(lineEls.get(i));
                 }
             }
-            lineCenter = UnbakedElementsHelper.bakeElements(baker, lineCenterElements, materialGetter, identity);
-            List<BakedQuad> lineAll = UnbakedElementsHelper.bakeElements(baker, lineParsed.elements(), materialGetter, identity);
+            lineCenter = UnbakedGeometryHelper.bakeElements(lineCenterElements, spriteGetter, identity);
+            List<BakedQuad> lineAll = UnbakedGeometryHelper.bakeElements(lineEls, spriteGetter, identity);
             return new CompositeGeometry(Map.copyOf(byName), lineCenter, List.copyOf(lineAll), true);
         } catch (Exception ex) {
             AnotherQuarries.LOGGER.error(
@@ -110,14 +95,7 @@ public final class CompositeGeometry {
         }
     }
 
-    private static java.util.function.Function<String, Material.Baked> materialGetter(ModelBaker baker, Identifier textureId) {
-        return ref -> {
-            Identifier resolved = ref.startsWith("#") ? textureId : Identifier.parse(ref);
-            return baker.materials().get(new Material(resolved), DEBUG_NAME);
-        };
-    }
-
-    private static String classpathModelPath(Identifier modelId) {
+    private static String classpathModelPath(ResourceLocation modelId) {
         return "/assets/" + modelId.getNamespace() + "/models/" + modelId.getPath() + ".json";
     }
 
@@ -143,7 +121,7 @@ public final class CompositeGeometry {
         }
     }
 
-    private record ParsedElements(List<CuboidModelElement> elements, List<String> elementNames) {}
+    private record ParsedModel(BlockModel model, List<String> elementNames) {}
 
     private static List<String> extractElementNames(JsonObject root) {
         if (!root.has("elements")) {
@@ -161,7 +139,7 @@ public final class CompositeGeometry {
         return names;
     }
 
-    private static ParsedElements readElements(Identifier modelId, String textureRlString) throws Exception {
+    private static ParsedModel readModel(ResourceLocation modelId, String textureRlString) throws Exception {
         String cp = classpathModelPath(modelId);
         var stream = ModBlocks.class.getResourceAsStream(cp);
         if (stream == null) {
@@ -177,13 +155,8 @@ public final class CompositeGeometry {
             }
             resolveFaceTextures(obj, textureRlString);
             List<String> elementNames = extractElementNames(obj);
-            List<CuboidModelElement> elements = new ArrayList<>();
-            if (obj.has("elements")) {
-                for (JsonElement el : obj.getAsJsonArray("elements")) {
-                    elements.add(ELEMENT_GSON.fromJson(el, CuboidModelElement.class));
-                }
-            }
-            return new ParsedElements(Collections.unmodifiableList(elements), Collections.unmodifiableList(elementNames));
+            BlockModel model = ExtendedBlockModelDeserializer.INSTANCE.fromJson(obj, BlockModel.class);
+            return new ParsedModel(model, Collections.unmodifiableList(elementNames));
         }
     }
 
@@ -207,9 +180,10 @@ public final class CompositeGeometry {
         if (transform == null || transform.isIdentity()) {
             return List.copyOf(source);
         }
+        IQuadTransformer transformer = QuadTransformers.applying(transform);
         List<BakedQuad> out = new ArrayList<>(source.size());
         for (BakedQuad q : source) {
-            out.add(QuadTransforms.applyTransformation(q, transform));
+            out.add(transformer.process(q));
         }
         return out;
     }

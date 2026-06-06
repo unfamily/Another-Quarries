@@ -6,11 +6,21 @@
     "AEA"
   ],
   "key": {
-    "A": "#c:ingots/iron",
-    "B": "#c:storage_blocks/redstone",
-    "C": "#another_quarries:quarry_eyes",
-    "D": "#c:storage_blocks/copper",
-    "E": "#c:storage_blocks/iron"
+    "A": {
+      "tag": "c:ingots/iron"
+    },
+    "B": {
+      "tag": "c:storage_blocks/redstone"
+    },
+    "C": {
+      "tag": "another_quarries:quarry_eyes"
+    },
+    "D": {
+      "tag": "c:storage_blocks/copper"
+    },
+    "E": {
+      "tag": "c:storage_blocks/iron"
+    }
   },
   "result": {
     "id": "another_quarries:quarry",

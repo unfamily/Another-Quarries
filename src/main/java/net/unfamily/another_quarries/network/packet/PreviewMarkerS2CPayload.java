@@ -5,7 +5,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.client.ClientPreviewHandler;
@@ -14,7 +14,7 @@ public record PreviewMarkerS2CPayload(BlockPos builderOrigin, BlockPos pos, int 
         implements CustomPacketPayload {
 
     public static final Type<PreviewMarkerS2CPayload> TYPE = new Type<>(
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "preview_marker"));
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "preview_marker"));
 
     public static final StreamCodec<FriendlyByteBuf, PreviewMarkerS2CPayload> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, PreviewMarkerS2CPayload::builderOrigin,

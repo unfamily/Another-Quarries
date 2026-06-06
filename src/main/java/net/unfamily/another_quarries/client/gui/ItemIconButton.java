@@ -1,21 +1,20 @@
 package net.unfamily.another_quarries.client.gui;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Supplier;
 
 public class ItemIconButton extends Button {
     private final Supplier<ItemStack> iconStack;
     @Nullable
-    private final Supplier<Identifier> overlayTexture;
+    private final Supplier<ResourceLocation> overlayTexture;
 
     public ItemIconButton(
             int x, int y, int size, OnPress onPress,
@@ -25,7 +24,7 @@ public class ItemIconButton extends Button {
 
     public ItemIconButton(
             int x, int y, int size, OnPress onPress,
-            Supplier<ItemStack> iconStack, @Nullable Supplier<Identifier> overlayTexture,
+            Supplier<ItemStack> iconStack, @Nullable Supplier<ResourceLocation> overlayTexture,
             Component tooltip) {
         super(x, y, size, size, Component.empty(), onPress, DEFAULT_NARRATION);
         this.iconStack = iconStack;
@@ -36,24 +35,24 @@ public class ItemIconButton extends Button {
     }
 
     @Override
-    protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        extractDefaultSprite(graphics);
+    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.renderWidget(graphics, mouseX, mouseY, partialTick);
         int iconSize = 12;
         int ix = getX() + (getWidth() - iconSize) / 2;
         int iy = getY() + (getHeight() - iconSize) / 2;
-        Identifier texture = overlayTexture != null ? overlayTexture.get() : null;
+        ResourceLocation texture = overlayTexture != null ? overlayTexture.get() : null;
         if (texture != null) {
-            graphics.blit(RenderPipelines.GUI_TEXTURED, texture, ix, iy, 0.0F, 0.0F, iconSize, iconSize, iconSize, iconSize);
+            graphics.blit(texture, ix, iy, 0, 0, iconSize, iconSize, iconSize, iconSize);
             return;
         }
         ItemStack stack = iconStack.get();
         if (!stack.isEmpty()) {
-            graphics.pose().pushMatrix();
+            graphics.pose().pushPose();
             float scale = iconSize / 16.0f;
-            graphics.pose().translate(ix, iy);
-            graphics.pose().scale(scale, scale);
-            graphics.item(stack, 0, 0);
-            graphics.pose().popMatrix();
+            graphics.pose().translate(ix, iy, 0);
+            graphics.pose().scale(scale, scale, 1);
+            graphics.renderItem(stack, 0, 0);
+            graphics.pose().popPose();
         }
     }
 

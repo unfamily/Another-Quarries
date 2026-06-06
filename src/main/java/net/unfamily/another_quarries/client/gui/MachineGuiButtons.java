@@ -1,22 +1,20 @@
 package net.unfamily.another_quarries.client.gui;
 
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.unfamily.another_quarries.AnotherQuarries;
 
-import java.util.List;
 import java.util.function.Supplier;
 
 public final class MachineGuiButtons {
     public static final int ICON_SIZE = 16;
-    public static final Identifier REDSTONE_GUI =
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/redstone_gui.png");
+    public static final ResourceLocation REDSTONE_GUI =
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/redstone_gui.png");
 
     private MachineGuiButtons() {}
 
@@ -38,7 +36,7 @@ public final class MachineGuiButtons {
         };
     }
 
-    public static Identifier redstoneOverlay(int mode, boolean allowPulse) {
+    public static ResourceLocation redstoneOverlay(int mode, boolean allowPulse) {
         return displayRedstoneMode(mode, allowPulse) == 2 ? REDSTONE_GUI : null;
     }
 
@@ -62,14 +60,7 @@ public final class MachineGuiButtons {
                 Component.empty());
     }
 
-    public static void renderTooltipLine(
-            GuiGraphicsExtractor graphics, Font font, int mouseX, int mouseY, Component line) {
-        graphics.setTooltipForNextFrame(
-                font,
-                List.of(line.getVisualOrderText()),
-                DefaultTooltipPositioner.INSTANCE,
-                mouseX,
-                mouseY,
-                true);
+    public static void renderTooltipLine(GuiGraphics graphics, Font font, int mouseX, int mouseY, Component line) {
+        graphics.renderTooltip(font, line, mouseX, mouseY);
     }
 }

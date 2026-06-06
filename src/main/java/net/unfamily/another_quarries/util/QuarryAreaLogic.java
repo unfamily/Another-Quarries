@@ -398,7 +398,7 @@ public final class QuarryAreaLogic {
         it.unimi.dsi.fastutil.longs.LongOpenHashSet chunks = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
         for (BlockPos pos : enumerateFrameStructureBlocks(
                 quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth)) {
-            chunks.add(net.minecraft.world.level.ChunkPos.pack(pos));
+            chunks.add(net.minecraft.world.level.ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4));
         }
         long[] packed = chunks.toLongArray();
         java.util.Arrays.sort(packed);
@@ -641,7 +641,7 @@ public final class QuarryAreaLogic {
         it.unimi.dsi.fastutil.longs.LongOpenHashSet chunks = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
         for (BlockPos pos : enumerateVolumeLayerAtDy(
                 quarryPos, facing, sizeLeft, sizeRight, sizeHeight, sizeDepth, dy)) {
-            chunks.add(net.minecraft.world.level.ChunkPos.pack(pos));
+            chunks.add(net.minecraft.world.level.ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4));
         }
         long[] packed = chunks.toLongArray();
         java.util.Arrays.sort(packed);

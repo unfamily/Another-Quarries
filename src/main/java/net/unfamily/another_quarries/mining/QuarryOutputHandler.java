@@ -3,15 +3,11 @@ package net.unfamily.another_quarries.mining;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.items.ItemStackHandler;
-import net.neoforged.neoforge.transfer.ResourceHandler;
-import net.neoforged.neoforge.transfer.ResourceHandlerUtil;
-import net.neoforged.neoforge.transfer.item.ItemResource;
-import net.neoforged.neoforge.transfer.transaction.Transaction;
-import net.unfamily.iskalib.transfer.LegacyItemHandlerResourceHandler;
 
 public final class QuarryOutputHandler {
     private QuarryOutputHandler() {}
@@ -31,31 +27,37 @@ public final class QuarryOutputHandler {
 
     public static void tryEjectBufferUp(ServerLevel level, BlockPos quarryPos, ItemStackHandler buffer) {
         BlockPos above = quarryPos.above();
-        BlockState state = level.getBlockState(above);
-        var blockEntity = level.getBlockEntity(above);
-        ResourceHandler<ItemResource> destination = level.getCapability(
-                Capabilities.Item.BLOCK, above, state, blockEntity, Direction.DOWN);
+        IItemHandler destination = level.getCapability(
+                Capabilities.ItemHandler.BLOCK, above, Direction.DOWN);
         if (destination == null) {
             return;
         }
-        ResourceHandler<ItemResource> source = LegacyItemHandlerResourceHandler.wrap(buffer);
-        if (!canAcceptAny(source, destination)) {
+        if (!canAcceptAny(buffer, destination)) {
             return;
         }
-        try (Transaction tx = Transaction.openRoot()) {
-            int moved = ResourceHandlerUtil.moveStacking(
-                    source, destination, resource -> !resource.isEmpty(), Integer.MAX_VALUE, tx);
-            if (moved > 0) {
-                tx.commit();
+        for (int slot = 0; slot < buffer.getSlots(); slot++) {
+            ItemStack stack = buffer.getStackInSlot(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            ItemStack remainder = ItemHandlerHelper.insertItemStacked(destination, stack, false);
+            if (remainder.getCount() != stack.getCount()) {
+                buffer.setStackInSlot(slot, remainder);
             }
         }
     }
 
-    private static boolean canAcceptAny(ResourceHandler<ItemResource> source, ResourceHandler<ItemResource> destination) {
-        try (Transaction tx = Transaction.openRoot()) {
-            int moved = ResourceHandlerUtil.moveStacking(
-                    source, destination, resource -> !resource.isEmpty(), Integer.MAX_VALUE, tx);
-            return moved > 0;
+    private static boolean canAcceptAny(IItemHandler source, IItemHandler destination) {
+        for (int slot = 0; slot < source.getSlots(); slot++) {
+            ItemStack stack = source.getStackInSlot(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            ItemStack remainder = ItemHandlerHelper.insertItemStacked(destination, stack.copy(), true);
+            if (remainder.getCount() < stack.getCount()) {
+                return true;
+            }
         }
+        return false;
     }
 }

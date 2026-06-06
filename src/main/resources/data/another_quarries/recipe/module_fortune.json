@@ -6,8 +6,12 @@
     " A "
   ],
   "key": {
-    "A": "#c:storage_blocks/lapis",
-    "B": "another_quarries:module_base"
+    "A": {
+      "tag": "c:storage_blocks/lapis"
+    },
+    "B": {
+      "item": "another_quarries:module_base"
+    }
   },
   "result": {
     "id": "another_quarries:module_fortune",

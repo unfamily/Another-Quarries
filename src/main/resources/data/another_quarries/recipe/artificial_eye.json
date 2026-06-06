@@ -6,8 +6,12 @@
     " A "
   ],
   "key": {
-    "A": "#c:gems/lapis",
-    "B": "#c:ingots/gold"
+    "A": {
+      "tag": "c:gems/lapis"
+    },
+    "B": {
+      "tag": "c:ingots/gold"
+    }
   },
   "result": {
     "id": "another_quarries:artificial_eye",

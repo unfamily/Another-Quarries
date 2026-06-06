@@ -1,12 +1,14 @@
 package net.unfamily.another_quarries.mining;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.storage.ValueInput;
-import net.minecraft.world.level.storage.ValueOutput;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.block.structure.StructureQuarryBlock;
 import net.unfamily.another_quarries.block.structure.StructureQuarryVisualRefresh;
@@ -296,21 +298,21 @@ public final class QuarryFrameController {
         validationFrameTotal = 0;
     }
 
-    public void save(ValueOutput output) {
-        output.putString("FramePhase", phase.name());
-        output.putInt("FrameSignature", frameSignature);
-        output.putBoolean("FrameSkipped", skipped);
+    public void save(CompoundTag tag) {
+        tag.putString("FramePhase", phase.name());
+        tag.putInt("FrameSignature", frameSignature);
+        tag.putBoolean("FrameSkipped", skipped);
     }
 
-    public void load(ValueInput input) {
+    public void load(CompoundTag tag) {
         try {
-            phase = Phase.valueOf(input.getStringOr("FramePhase", Phase.READY.name()));
+            phase = Phase.valueOf(tag.contains("FramePhase") ? tag.getString("FramePhase") : Phase.READY.name());
         } catch (IllegalArgumentException ignored) {
             phase = Phase.READY;
         }
-        frameSignature = input.getIntOr("FrameSignature", 0);
-        skipped = input.getBooleanOr("FrameSkipped", false);
-        input.getIntOr("FrameValidationCooldown", 0);
+        frameSignature = tag.contains("FrameSignature") ? tag.getInt("FrameSignature") : 0;
+        skipped = tag.getBoolean("FrameSkipped");
+        tag.getInt("FrameValidationCooldown");
         clearQueue.clear();
         placeQueue.clear();
         resetValidationState();

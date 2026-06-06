@@ -6,8 +6,12 @@
     " A "
   ],
   "key": {
-    "A": "#c:ingots/gold",
-    "B": "another_quarries:module_base"
+    "A": {
+      "tag": "c:ingots/gold"
+    },
+    "B": {
+      "item": "another_quarries:module_base"
+    }
   },
   "result": {
     "id": "another_quarries:module_speed",

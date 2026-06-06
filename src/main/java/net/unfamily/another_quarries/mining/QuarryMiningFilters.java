@@ -4,7 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.Level;
@@ -111,8 +111,8 @@ public final class QuarryMiningFilters {
         if (blockEntity instanceof Container) {
             return true;
         }
-        var itemHandler = level.getCapability(Capabilities.Item.BLOCK, pos, state, blockEntity, null);
-        return itemHandler != null && itemHandler.size() > 0;
+        var itemHandler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        return itemHandler != null && itemHandler.getSlots() > 0;
     }
 
     private record FilterEntries(Set<Block> blocks, Set<TagKey<Block>> tags) {}
@@ -126,12 +126,12 @@ public final class QuarryMiningFilters {
             }
             String trimmed = raw.trim();
             if (trimmed.startsWith("#")) {
-                Identifier tagId = Identifier.tryParse(trimmed.substring(1));
+                ResourceLocation tagId = ResourceLocation.tryParse(trimmed.substring(1));
                 if (tagId != null) {
                     tags.add(TagKey.create(Registries.BLOCK, tagId));
                 }
             } else {
-                Identifier blockId = Identifier.tryParse(trimmed);
+                ResourceLocation blockId = ResourceLocation.tryParse(trimmed);
                 if (blockId != null) {
                     BuiltInRegistries.BLOCK.getOptional(blockId).ifPresent(blocks::add);
                 }

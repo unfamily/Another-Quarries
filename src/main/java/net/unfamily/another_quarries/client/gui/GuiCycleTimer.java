@@ -1,7 +1,7 @@
 package net.unfamily.another_quarries.client.gui;
 
-import net.minecraft.client.Minecraft;
-import org.jspecify.annotations.Nullable;
+import net.minecraft.client.gui.screens.Screen;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
@@ -34,7 +34,7 @@ public class GuiCycleTimer {
     }
 
     public void onDraw() {
-        if (!Minecraft.getInstance().hasShiftDown()) {
+        if (!Screen.hasShiftDown()) {
             if (pausedDuration > 0) {
                 startTime += pausedDuration;
                 pausedDuration = 0;

@@ -5,11 +5,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.level.block.Block;
 
 import java.util.List;
-import java.util.function.Consumer;
 
 public class DescribedBlockItem extends BlockItem {
     private final List<String> tooltipKeys;
@@ -24,12 +22,11 @@ public class DescribedBlockItem extends BlockItem {
     public void appendHoverText(
             ItemStack stack,
             TooltipContext context,
-            TooltipDisplay display,
-            Consumer<Component> tooltipAdder,
+            List<Component> tooltipComponents,
             TooltipFlag tooltipFlag) {
-        super.appendHoverText(stack, context, display, tooltipAdder, tooltipFlag);
+        super.appendHoverText(stack, context, tooltipComponents, tooltipFlag);
         for (String key : tooltipKeys) {
-            tooltipAdder.accept(Component.translatable(key).withStyle(ChatFormatting.GRAY));
+            tooltipComponents.add(Component.translatable(key).withStyle(ChatFormatting.GRAY));
         }
     }
 }

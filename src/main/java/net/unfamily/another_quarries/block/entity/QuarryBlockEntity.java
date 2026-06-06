@@ -1,13 +1,15 @@
 package net.unfamily.another_quarries.block.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Containers;
-import net.minecraft.world.ItemStackWithSlot;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -16,8 +18,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.storage.ValueInput;
-import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.neoforge.energy.EnergyStorage;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.items.IItemHandler;
@@ -35,11 +35,8 @@ import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.util.QuarryAreaLogic;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
 import net.unfamily.another_quarries.util.QuarryRedstoneUtil;
-import net.unfamily.iskalib.transfer.LegacyItemHandlerResourceHandler;
-import net.neoforged.neoforge.transfer.ResourceHandler;
-import net.neoforged.neoforge.transfer.item.ItemResource;
 
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
@@ -82,8 +79,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private final ItemStackHandler bufferHandler;
     private final ItemStackHandler equipmentHandler;
     private final EnergyStorageImpl energyStorage;
-    private final EnergyHandlerImpl energyHandler;
-    private final ResourceHandler<ItemResource> itemTransferHandler;
     private final QuarryMiningEngine miningEngine;
     private final LongOpenHashSet forcedMiningChunks = new LongOpenHashSet();
 
@@ -114,8 +109,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         };
         int initialCapacity = ModConfig.resolveEnergyBufferCapacity(peakRfPerTick());
         this.energyStorage = new EnergyStorageImpl(initialCapacity, initialCapacity, initialCapacity);
-        this.energyHandler = new EnergyHandlerImpl();
-        this.itemTransferHandler = LegacyItemHandlerResourceHandler.wrap(bufferHandler);
         this.miningEngine = new QuarryMiningEngine(this);
     }
 
@@ -144,16 +137,12 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         return energyStorage;
     }
 
-    public net.neoforged.neoforge.transfer.energy.EnergyHandler getEnergyHandler() {
-        return energyHandler;
+    public IItemHandler getCombinedItemHandler() {
+        return bufferHandler;
     }
 
     public IItemHandler getBufferItemHandler() {
         return bufferHandler;
-    }
-
-    public ResourceHandler<ItemResource> getItemTransferHandler() {
-        return itemTransferHandler;
     }
 
     public int getEnergyStoredDisplay() {
@@ -404,68 +393,70 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     @Override
-    protected void saveAdditional(ValueOutput output) {
-        super.saveAdditional(output);
-        output.putInt("SizeLeft", sizeLeft);
-        output.putInt("SizeRight", sizeRight);
-        output.putInt("SizeHeight", sizeHeight);
-        output.putInt("SizeDepth", sizeDepth);
-        output.putBoolean("PreviewEnabled", previewEnabled);
-        output.putInt("DiggingMode", diggingMode.getId());
-        output.putInt("RedstoneMode", redstoneMode);
-        output.putInt("Energy", energyStorage.getEnergyStored());
-        output.putBoolean("PreviousCanWork", previousCanWork);
-        output.putInt("EquipmentVersion", QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION);
-        saveHandlerSlots(output, "Buffer", bufferHandler);
-        saveHandlerSlots(output, "Equipment", equipmentHandler);
-        miningEngine.save(output);
-    }
-
-    private static void saveHandlerSlots(ValueOutput output, String key, ItemStackHandler handler) {
-        ValueOutput.TypedOutputList<ItemStackWithSlot> list = output.list(key, ItemStackWithSlot.CODEC);
-        for (int i = 0; i < handler.getSlots(); i++) {
-            ItemStack stack = handler.getStackInSlot(i);
-            if (!stack.isEmpty()) {
-                list.add(new ItemStackWithSlot(i, stack));
-            }
-        }
-        if (list.isEmpty()) {
-            output.discard(key);
-        }
+    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+        super.saveAdditional(tag, registries);
+        tag.putInt("SizeLeft", sizeLeft);
+        tag.putInt("SizeRight", sizeRight);
+        tag.putInt("SizeHeight", sizeHeight);
+        tag.putInt("SizeDepth", sizeDepth);
+        tag.putBoolean("PreviewEnabled", previewEnabled);
+        tag.putInt("DiggingMode", diggingMode.getId());
+        tag.putInt("RedstoneMode", redstoneMode);
+        tag.putInt("Energy", energyStorage.getEnergyStored());
+        tag.putBoolean("PreviousCanWork", previousCanWork);
+        tag.putInt("EquipmentVersion", QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION);
+        tag.put("Buffer", bufferHandler.serializeNBT(registries));
+        tag.put("Equipment", equipmentHandler.serializeNBT(registries));
+        CompoundTag miningTag = new CompoundTag();
+        miningEngine.save(miningTag, registries);
+        tag.put("MiningEngine", miningTag);
     }
 
     @Override
-    protected void loadAdditional(ValueInput input) {
-        super.loadAdditional(input);
-        sizeLeft = input.getIntOr("SizeLeft", DEFAULT_SIZE_LEFT);
-        sizeRight = input.getIntOr("SizeRight", DEFAULT_SIZE_RIGHT);
-        sizeHeight = input.getIntOr("SizeHeight", DEFAULT_SIZE_HEIGHT);
-        sizeDepth = input.getIntOr("SizeDepth", DEFAULT_SIZE_DEPTH);
+    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+        super.loadAdditional(tag, registries);
+        sizeLeft = tag.contains("SizeLeft") ? tag.getInt("SizeLeft") : DEFAULT_SIZE_LEFT;
+        sizeRight = tag.contains("SizeRight") ? tag.getInt("SizeRight") : DEFAULT_SIZE_RIGHT;
+        sizeHeight = tag.contains("SizeHeight") ? tag.getInt("SizeHeight") : DEFAULT_SIZE_HEIGHT;
+        sizeDepth = tag.contains("SizeDepth") ? tag.getInt("SizeDepth") : DEFAULT_SIZE_DEPTH;
         clampSizes();
-        previewEnabled = input.getBooleanOr("PreviewEnabled", false);
-        diggingMode = QuarryDiggingMode.fromId(input.getIntOr("DiggingMode", QuarryDiggingMode.VOLUME.getId()));
-        redstoneMode = normalizeRedstoneMode(input.getIntOr("RedstoneMode", 0));
-        previousCanWork = input.getBooleanOr("PreviousCanWork", false);
-        energyStorage.setEnergy(input.getIntOr("Energy", 0));
-        int equipmentVersion = input.getIntOr("EquipmentVersion", 1);
+        previewEnabled = tag.getBoolean("PreviewEnabled");
+        diggingMode = QuarryDiggingMode.fromId(tag.contains("DiggingMode") ? tag.getInt("DiggingMode") : QuarryDiggingMode.VOLUME.getId());
+        redstoneMode = normalizeRedstoneMode(tag.contains("RedstoneMode") ? tag.getInt("RedstoneMode") : 0);
+        previousCanWork = tag.getBoolean("PreviousCanWork");
+        energyStorage.setEnergy(tag.contains("Energy") ? tag.getInt("Energy") : 0);
+        int equipmentVersion = tag.contains("EquipmentVersion") ? tag.getInt("EquipmentVersion") : 1;
         if (equipmentVersion < QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION) {
-            migrateLegacyEquipment(input, equipmentHandler, equipmentVersion);
+            migrateLegacyEquipment(tag, equipmentHandler, equipmentVersion, registries);
         } else {
-            loadHandlerSlots(input, "Equipment", equipmentHandler);
+            loadHandlerSlots(tag, "Equipment", equipmentHandler, registries);
         }
-        loadHandlerSlots(input, "Buffer", bufferHandler);
+        loadHandlerSlots(tag, "Buffer", bufferHandler, registries);
         migrateRemovedDrills(equipmentHandler);
-        miningEngine.load(input);
+        if (tag.contains("MiningEngine", Tag.TAG_COMPOUND)) {
+            miningEngine.load(tag.getCompound("MiningEngine"), registries);
+        }
         refreshEnergyCapacity();
         if (level != null && !level.isClientSide()) {
             previousCanWork = canWork();
         }
     }
 
-    private static void loadHandlerSlots(ValueInput input, String key, ItemStackHandler handler) {
-        for (ItemStackWithSlot entry : input.listOrEmpty(key, ItemStackWithSlot.CODEC)) {
-            if (entry.slot() >= 0 && entry.slot() < handler.getSlots()) {
-                handler.setStackInSlot(entry.slot(), entry.stack());
+    private static void loadHandlerSlots(CompoundTag tag, String key, ItemStackHandler handler, HolderLookup.Provider registries) {
+        if (tag.contains(key, Tag.TAG_COMPOUND)) {
+            handler.deserializeNBT(registries, tag.getCompound(key));
+            return;
+        }
+        if (!tag.contains(key, Tag.TAG_LIST)) {
+            return;
+        }
+        ListTag list = tag.getList(key, Tag.TAG_COMPOUND);
+        for (int i = 0; i < list.size(); i++) {
+            CompoundTag entry = list.getCompound(i);
+            int slot = entry.contains("Slot") ? entry.getInt("Slot") : entry.getInt("slot");
+            ItemStack stack = ItemStack.parseOptional(registries, entry);
+            if (slot >= 0 && slot < handler.getSlots()) {
+                handler.setStackInSlot(slot, stack);
             }
         }
     }
@@ -484,10 +475,15 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private static final int LEGACY_V2_SPEED_SLOT = 6;
     private static final int LEGACY_V2_ENCHANT_SLOT = 7;
 
-    private static void migrateLegacyEquipment(ValueInput input, ItemStackHandler handler, int fromVersion) {
+    private static void migrateLegacyEquipment(CompoundTag tag, ItemStackHandler handler, int fromVersion, HolderLookup.Provider registries) {
         java.util.HashMap<Integer, ItemStack> bySlot = new java.util.HashMap<>();
-        for (ItemStackWithSlot entry : input.listOrEmpty("Equipment", ItemStackWithSlot.CODEC)) {
-            bySlot.put(entry.slot(), entry.stack());
+        if (tag.contains("Equipment", Tag.TAG_LIST)) {
+            ListTag list = tag.getList("Equipment", Tag.TAG_COMPOUND);
+            for (int i = 0; i < list.size(); i++) {
+                CompoundTag entry = list.getCompound(i);
+                int slot = entry.contains("Slot") ? entry.getInt("Slot") : entry.getInt("slot");
+                bySlot.put(slot, ItemStack.parseOptional(registries, entry));
+            }
         }
 
         for (int i = 0; i < handler.getSlots(); i++) {
@@ -702,49 +698,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
 
         public void setEnergy(int energy) {
             this.energy = Math.max(0, Math.min(energy, capacity));
-        }
-    }
-
-    private final class EnergyHandlerImpl extends net.neoforged.neoforge.transfer.transaction.SnapshotJournal<Integer>
-            implements net.neoforged.neoforge.transfer.energy.EnergyHandler {
-        @Override
-        protected Integer createSnapshot() {
-            return energyStorage.getEnergyStored();
-        }
-
-        @Override
-        protected void revertToSnapshot(Integer snapshot) {
-            energyStorage.setEnergy(snapshot);
-        }
-
-        @Override
-        public long getAmountAsLong() {
-            return energyStorage.getEnergyStored();
-        }
-
-        @Override
-        public long getCapacityAsLong() {
-            return energyStorage.getCapacity();
-        }
-
-        @Override
-        public int insert(int amount, net.neoforged.neoforge.transfer.transaction.TransactionContext transaction) {
-            net.neoforged.neoforge.transfer.TransferPreconditions.checkNonNegative(amount);
-            if (amount == 0 || energyStorage.getCapacity() <= 0) {
-                return 0;
-            }
-            updateSnapshots(transaction);
-            return energyStorage.receiveEnergy(amount, false);
-        }
-
-        @Override
-        public int extract(int amount, net.neoforged.neoforge.transfer.transaction.TransactionContext transaction) {
-            net.neoforged.neoforge.transfer.TransferPreconditions.checkNonNegative(amount);
-            if (amount == 0 || energyStorage.getCapacity() <= 0) {
-                return 0;
-            }
-            updateSnapshots(transaction);
-            return energyStorage.extractEnergy(amount, false);
         }
     }
 }

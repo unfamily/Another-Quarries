@@ -30,7 +30,7 @@ import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.block.structure.StructureQuarryVisualRefresh;
 import net.unfamily.another_quarries.registry.ModBlockEntities;
 
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -114,22 +114,24 @@ public final class QuarryBlock extends BaseEntityBlock {
     }
 
     @Override
-    protected void affectNeighborsAfterRemoval(BlockState state, ServerLevel level, BlockPos pos, boolean movedByPiston) {
-        BlockEntity blockEntity = level.getBlockEntity(pos);
-        if (blockEntity instanceof QuarryBlockEntity quarry) {
-            quarry.setPreviewEnabled(false);
-            quarry.drops();
-        }
-        if (!movedByPiston) {
-            StructureQuarryVisualRefresh.refreshAround(level, pos);
-        }
-        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston);
-    }
-
-    @Override
     public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
         super.onPlace(state, level, pos, oldState, movedByPiston);
         StructureQuarryVisualRefresh.refreshAround(level, pos);
+    }
+
+    @Override
+    public void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
+        if (!state.is(newState.getBlock())) {
+            BlockEntity blockEntity = level.getBlockEntity(pos);
+            if (blockEntity instanceof QuarryBlockEntity quarry) {
+                quarry.setPreviewEnabled(false);
+                quarry.drops();
+            }
+            if (!movedByPiston) {
+                StructureQuarryVisualRefresh.refreshAround(level, pos);
+            }
+        }
+        super.onRemove(state, level, pos, newState, movedByPiston);
     }
 
     @Override
@@ -138,9 +140,9 @@ public final class QuarryBlock extends BaseEntityBlock {
             Level level,
             BlockPos pos,
             Block neighborBlock,
-            net.minecraft.world.level.redstone.@org.jspecify.annotations.Nullable Orientation orientation,
+            BlockPos neighborPos,
             boolean movedByPiston) {
-        super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston);
+        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston);
         StructureQuarryVisualRefresh.refreshAround(level, pos);
     }
 

@@ -88,7 +88,7 @@ public final class QuarryRedstoneUtil {
         if (state.isAir()) {
             return true;
         }
-        if (state.isSolidRender()) {
+        if (state.isSolidRender(level, pos)) {
             return false;
         }
         VoxelShape shape = state.getCollisionShape(level, pos, CollisionContext.empty());

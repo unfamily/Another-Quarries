@@ -10,44 +10,37 @@ import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.item.DescribedBlockItem;
 import net.unfamily.another_quarries.item.DescribedItem;
 
-import java.util.function.UnaryOperator;
-
 public final class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(AnotherQuarries.MOD_ID);
+    private static final Item.Properties ITEM_PROPERTIES = new Item.Properties();
 
-    public static final DeferredItem<BlockItem> QUARRY = ITEMS.registerItem("quarry",
-            props -> new DescribedBlockItem(
+    public static final DeferredItem<BlockItem> QUARRY = ITEMS.register("quarry",
+            () -> new DescribedBlockItem(
                     ModBlocks.QUARRY.get(),
-                    props,
+                    ITEM_PROPERTIES,
                     "tooltip.another_quarries.quarry.desc0",
-                    "tooltip.another_quarries.quarry.desc1"),
-            Item.Properties::useBlockDescriptionPrefix);
+                    "tooltip.another_quarries.quarry.desc1"));
     public static final DeferredItem<BlockItem> STRUCTURE_QUARRY =
-            ITEMS.registerSimpleBlockItem(ModBlocks.STRUCTURE_QUARRY);
+            ITEMS.register("structure_quarry", () -> new BlockItem(ModBlocks.STRUCTURE_QUARRY.get(), ITEM_PROPERTIES));
 
-    public static final DeferredItem<Item> DRONE = ITEMS.registerItem("drone",
-            props -> new DescribedItem(props, "tooltip.another_quarries.drone.desc"),
-            UnaryOperator.identity());
-    public static final DeferredItem<Item> DRILL_DIAMOND = ITEMS.registerItem("drill_diamond",
-            props -> new DescribedItem(props, "tooltip.another_quarries.drill_diamond.desc"),
-            UnaryOperator.identity());
-    public static final DeferredItem<Item> DRILL_NETHERITE = ITEMS.registerItem("drill_netherite",
-            props -> new DescribedItem(props, "tooltip.another_quarries.drill_netherite.desc"),
-            UnaryOperator.identity());
-    public static final DeferredItem<Item> MODULE_BASE = ITEMS.registerSimpleItem("module_base");
-    public static final DeferredItem<Item> MODULE_SPEED = ITEMS.registerItem("module_speed",
-            props -> new DescribedItem(props, "tooltip.another_quarries.module_speed.desc"),
-            UnaryOperator.identity());
-    public static final DeferredItem<Item> MODULE_DIGGER = ITEMS.registerItem("module_digger",
-            props -> new DescribedItem(props, "tooltip.another_quarries.module_digger.desc"),
-            UnaryOperator.identity());
-    public static final DeferredItem<Item> MODULE_SILK_TOUCH = ITEMS.registerItem("module_silktouch",
-            props -> new DescribedItem(props, "tooltip.another_quarries.module_silktouch.desc"),
-            UnaryOperator.identity());
-    public static final DeferredItem<Item> MODULE_FORTUNE = ITEMS.registerItem("module_fortune",
-            props -> new DescribedItem(props, "tooltip.another_quarries.module_fortune.desc"),
-            UnaryOperator.identity());
-    public static final DeferredItem<Item> ARTIFICIAL_EYE = ITEMS.registerSimpleItem("artificial_eye");
+    public static final DeferredItem<Item> DRONE = ITEMS.register("drone",
+            () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.drone.desc"));
+    public static final DeferredItem<Item> DRILL_DIAMOND = ITEMS.register("drill_diamond",
+            () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.drill_diamond.desc"));
+    public static final DeferredItem<Item> DRILL_NETHERITE = ITEMS.register("drill_netherite",
+            () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.drill_netherite.desc"));
+    public static final DeferredItem<Item> MODULE_BASE =
+            ITEMS.register("module_base", () -> new Item(ITEM_PROPERTIES));
+    public static final DeferredItem<Item> MODULE_SPEED = ITEMS.register("module_speed",
+            () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.module_speed.desc"));
+    public static final DeferredItem<Item> MODULE_DIGGER = ITEMS.register("module_digger",
+            () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.module_digger.desc"));
+    public static final DeferredItem<Item> MODULE_SILK_TOUCH = ITEMS.register("module_silktouch",
+            () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.module_silktouch.desc"));
+    public static final DeferredItem<Item> MODULE_FORTUNE = ITEMS.register("module_fortune",
+            () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.module_fortune.desc"));
+    public static final DeferredItem<Item> ARTIFICIAL_EYE =
+            ITEMS.register("artificial_eye", () -> new Item(ITEM_PROPERTIES));
 
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);

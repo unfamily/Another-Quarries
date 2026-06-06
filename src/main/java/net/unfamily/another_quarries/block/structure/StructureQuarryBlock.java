@@ -7,8 +7,8 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.util.RandomSource;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.LevelAccessor;
-import net.minecraft.world.level.ScheduledTickAccess;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.SimpleWaterloggedBlock;
@@ -78,12 +78,14 @@ public final class StructureQuarryBlock extends Block implements SimpleWaterlogg
     }
 
     @Override
-    protected void affectNeighborsAfterRemoval(BlockState state, ServerLevel level, BlockPos pos, boolean movedByPiston) {
-        if (!movedByPiston) {
+    public void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
+        if (!state.is(newState.getBlock())) {
             StructureQuarryNodePreviewTracker.remove(pos);
-            StructureQuarryVisualRefresh.refreshAround(level, pos);
+            if (!movedByPiston) {
+                StructureQuarryVisualRefresh.refreshAround(level, pos);
+            }
         }
-        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston);
+        super.onRemove(state, level, pos, newState, movedByPiston);
     }
 
     @Override
@@ -92,24 +94,22 @@ public final class StructureQuarryBlock extends Block implements SimpleWaterlogg
             Level level,
             BlockPos pos,
             Block neighborBlock,
-            net.minecraft.world.level.redstone.@org.jspecify.annotations.Nullable Orientation orientation,
+            BlockPos neighborPos,
             boolean movedByPiston) {
-        super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston);
+        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston);
         StructureQuarryVisualRefresh.refreshAround(level, pos);
     }
 
     @Override
     protected BlockState updateShape(
             BlockState state,
-            net.minecraft.world.level.LevelReader level,
-            ScheduledTickAccess ticks,
-            BlockPos pos,
             Direction direction,
-            BlockPos neighborPos,
             BlockState neighborState,
-            RandomSource random) {
+            LevelAccessor level,
+            BlockPos pos,
+            BlockPos neighborPos) {
         if (state.getValue(WATERLOGGED)) {
-            ticks.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(level));
+            level.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(level));
         }
         return state.setValue(CONNECTIONS, computeConnectionMask(level, pos));
     }

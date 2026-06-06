@@ -18,7 +18,7 @@ public final class ModBlockEntities {
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<QuarryBlockEntity>> QUARRY_BE =
             BLOCK_ENTITIES.register("quarry",
-                    () -> new BlockEntityType<>(QuarryBlockEntity::new, ModBlocks.QUARRY.get()));
+                    () -> BlockEntityType.Builder.of(QuarryBlockEntity::new, ModBlocks.QUARRY.get()).build(null));
 
     public static void register(IEventBus eventBus) {
         BLOCK_ENTITIES.register(eventBus);
@@ -29,13 +29,13 @@ public final class ModBlockEntities {
         @SubscribeEvent
         public static void registerCapabilities(RegisterCapabilitiesEvent event) {
             event.registerBlockEntity(
-                    Capabilities.Energy.BLOCK,
+                    Capabilities.EnergyStorage.BLOCK,
                     QUARRY_BE.get(),
-                    (be, side) -> be.getEnergyHandler());
+                    (be, side) -> be.getEnergyStorage());
             event.registerBlockEntity(
-                    Capabilities.Item.BLOCK,
+                    Capabilities.ItemHandler.BLOCK,
                     QUARRY_BE.get(),
-                    (be, side) -> be.getItemTransferHandler());
+                    (be, side) -> be.getCombinedItemHandler());
         }
     }
 

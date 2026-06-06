@@ -5,7 +5,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -22,7 +22,7 @@ public record QuarrySizeC2SPacket(BlockPos pos, int direction, boolean increment
         implements CustomPacketPayload {
 
     public static final Type<QuarrySizeC2SPacket> TYPE = new Type<>(
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_size"));
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_size"));
 
     public static final StreamCodec<FriendlyByteBuf, QuarrySizeC2SPacket> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, QuarrySizeC2SPacket::pos,

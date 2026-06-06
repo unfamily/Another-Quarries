@@ -6,9 +6,15 @@
     "ABA"
   ],
   "key": {
-    "B": "#c:cobblestones/deepslate",
-    "A": "minecraft:flint",
-    "C": "#c:ingots/copper"
+    "B": {
+      "tag": "c:cobblestones/deepslate"
+    },
+    "A": {
+      "item": "minecraft:flint"
+    },
+    "C": {
+      "tag": "c:ingots/copper"
+    }
   },
   "result": {
     "id": "another_quarries:module_base",

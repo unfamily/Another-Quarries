@@ -5,7 +5,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -18,7 +18,7 @@ import net.unfamily.another_quarries.util.QuarryPreview;
 public record QuarryPreviewToggleC2SPacket(BlockPos pos, boolean enable) implements CustomPacketPayload {
 
     public static final Type<QuarryPreviewToggleC2SPacket> TYPE = new Type<>(
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_preview_toggle"));
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_preview_toggle"));
 
     public static final StreamCodec<FriendlyByteBuf, QuarryPreviewToggleC2SPacket> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, QuarryPreviewToggleC2SPacket::pos,
