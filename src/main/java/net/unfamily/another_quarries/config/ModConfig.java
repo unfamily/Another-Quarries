@@ -82,14 +82,55 @@ public final class ModConfig {
             .comment("Maximum pending regenerated block targets queued per quarry")
             .defineInRange("regenQueueMaxSize", 256, 16, 4096);
 
-    private static final ModConfigSpec.IntValue FRAME_VALIDATION_BLOCKS_PER_TICK = BUILDER
+    private static final ModConfigSpec.IntValue AIR_SKIP_BLOCK_CHECKS_PER_TICK = BUILDER
             .comment(
-                    "Minimum block positions checked per tick during frame validation on reboot, power-on, or resize",
-                    "The quarry auto-scales upward so validation usually finishes within ~2 seconds")
-            .defineInRange("frameValidationBlocksPerTick", 256, 1, 4096);
+                    "Max block-state lookups per quarry per tick during air skip",
+                    "Cursor steps (airSkipCursorStepsPerTick) advance without world reads; this caps isEmptyBlock/getBlockState calls")
+            .defineInRange("airSkipBlockChecksPerTick", 512, 16, 65536);
 
-    /** Target ticks to complete a frame validation scan (~2 seconds at 20 TPS). */
-    private static final int FRAME_VALIDATION_TARGET_TICKS = 40;
+    private static final ModConfigSpec.IntValue AIR_SKIP_MAX_LAYERS_PER_TICK = BUILDER
+            .comment("Max empty horizontal layers a quarry may skip per tick")
+            .defineInRange("airSkipMaxLayersPerTick", 8, 1, 256);
+
+    private static final ModConfigSpec.IntValue AIR_SKIP_CURSOR_STEPS_PER_TICK = BUILDER
+            .comment(
+                    "Max cheap cursor steps per quarry per tick (no world reads)",
+                    "Air skip stops when this or airSkipBlockChecksPerTick is exhausted")
+            .defineInRange("airSkipCursorStepsPerTick", 800, 64, 65536);
+
+    private static final ModConfigSpec.BooleanValue AIR_SKIP_SECTION_FAST_PATH_ENABLED = BUILDER
+            .comment("Deprecated: section-wide air checks are disabled by default; use airSkipCursorStepsPerTick")
+            .define("airSkipSectionFastPathEnabled", false);
+
+    private static final ModConfigSpec.IntValue AIR_SKIP_CHUNK_SLICE_MIN_INTERIOR_BLOCKS = BUILDER
+            .comment(
+                    "In volume mode, process one chunk slice of each layer when interior columns per layer reach this count",
+                    "Set to 0 to disable chunk slicing in volume mode")
+            .defineInRange("airSkipChunkSliceMinInteriorBlocks", 256, 0, 65536);
+
+    private static final ModConfigSpec.IntValue FRAME_VALIDATION_BLOCKS_PER_TICK = BUILDER
+            .comment("Block positions checked per tick during frame validation on reboot, power-on, or resize")
+            .defineInRange("frameValidationBlocksPerTick", 64, 1, 4096);
+
+    private static final ModConfigSpec.IntValue FRAME_VALIDATION_MAX_BLOCKS_PER_TICK = BUILDER
+            .comment("Hard cap on frame validation positions processed per tick (prevents TPS spikes)")
+            .defineInRange("frameValidationMaxBlocksPerTick", 128, 1, 4096);
+
+    private static final ModConfigSpec.IntValue MAX_FRAME_WORK_BLOCKS_PER_TICK = BUILDER
+            .comment("Max frame clear/place block operations per quarry per tick during BOOT phase")
+            .defineInRange("maxFrameWorkBlocksPerTick", 16, 1, 512);
+
+    private static final ModConfigSpec.BooleanValue STRUCTURE_QUARRY_CASCADE_BREAK_ENABLED = BUILDER
+            .comment("When true, breaking one structure_quarry block slowly removes all connected structure pieces")
+            .define("structureQuarryCascadeBreakEnabled", true);
+
+    private static final ModConfigSpec.IntValue STRUCTURE_QUARRY_CASCADE_BLOCKS_PER_TICK = BUILDER
+            .comment("Connected structure_quarry blocks removed per server tick during a player break cascade")
+            .defineInRange("structureQuarryCascadeBlocksPerTick", 4, 1, 128);
+
+    private static final ModConfigSpec.IntValue STRUCTURE_QUARRY_CASCADE_MAX_BLOCKS = BUILDER
+            .comment("Maximum structure_quarry blocks queued from one player break (safety cap)")
+            .defineInRange("structureQuarryCascadeMaxBlocks", 4096, 1, 65536);
 
     private static final ModConfigSpec.IntValue EQUIPMENT_GUI_COLUMNS = BUILDER
             .comment("Equipment row width in the quarry GUI background (drone + drill + 3 upgrade slots must fit)")
@@ -369,18 +410,50 @@ public final class ModConfig {
         return REGEN_QUEUE_MAX_SIZE.get();
     }
 
+    public static int airSkipBlockChecksPerTick() {
+        return AIR_SKIP_BLOCK_CHECKS_PER_TICK.get();
+    }
+
+    public static int airSkipMaxLayersPerTick() {
+        return AIR_SKIP_MAX_LAYERS_PER_TICK.get();
+    }
+
+    public static int airSkipCursorStepsPerTick() {
+        return AIR_SKIP_CURSOR_STEPS_PER_TICK.get();
+    }
+
+    public static boolean airSkipSectionFastPathEnabled() {
+        return AIR_SKIP_SECTION_FAST_PATH_ENABLED.get();
+    }
+
+    public static int airSkipChunkSliceMinInteriorBlocks() {
+        return AIR_SKIP_CHUNK_SLICE_MIN_INTERIOR_BLOCKS.get();
+    }
+
     public static int frameValidationBlocksPerTick() {
         return FRAME_VALIDATION_BLOCKS_PER_TICK.get();
     }
 
-    /** Scales validation throughput so large quarries finish in roughly {@link #FRAME_VALIDATION_TARGET_TICKS} ticks. */
     public static int frameValidationBlocksPerTick(int remainingBlocks) {
-        int configured = FRAME_VALIDATION_BLOCKS_PER_TICK.get();
-        if (remainingBlocks <= 0) {
-            return configured;
-        }
-        int scaled = (remainingBlocks + FRAME_VALIDATION_TARGET_TICKS - 1) / FRAME_VALIDATION_TARGET_TICKS;
-        return Math.min(4096, Math.max(configured, scaled));
+        return Math.min(
+                FRAME_VALIDATION_MAX_BLOCKS_PER_TICK.get(),
+                FRAME_VALIDATION_BLOCKS_PER_TICK.get());
+    }
+
+    public static int maxFrameWorkBlocksPerTick() {
+        return MAX_FRAME_WORK_BLOCKS_PER_TICK.get();
+    }
+
+    public static boolean structureQuarryCascadeBreakEnabled() {
+        return STRUCTURE_QUARRY_CASCADE_BREAK_ENABLED.get();
+    }
+
+    public static int structureQuarryCascadeBlocksPerTick() {
+        return STRUCTURE_QUARRY_CASCADE_BLOCKS_PER_TICK.get();
+    }
+
+    public static int structureQuarryCascadeMaxBlocks() {
+        return STRUCTURE_QUARRY_CASCADE_MAX_BLOCKS.get();
     }
 
     public static List<? extends String> miningDenyList() {

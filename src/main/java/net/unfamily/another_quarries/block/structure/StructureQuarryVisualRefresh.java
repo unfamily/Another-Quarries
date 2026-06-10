@@ -7,7 +7,12 @@ import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public final class StructureQuarryVisualRefresh {
+    private static final ThreadLocal<Set<BlockPos>> DEFERRED_ORIGINS = ThreadLocal.withInitial(HashSet::new);
+
     private StructureQuarryVisualRefresh() {}
 
     public static void refreshAround(LevelAccessor level, BlockPos origin) {
@@ -15,7 +20,7 @@ public final class StructureQuarryVisualRefresh {
         if (!(level instanceof Level world)) {
             return;
         }
-        java.util.HashSet<BlockPos> positions = new java.util.HashSet<>();
+        HashSet<BlockPos> positions = new HashSet<>();
         positions.add(origin);
         for (Direction direction : Direction.values()) {
             positions.add(origin.relative(direction));
@@ -30,5 +35,22 @@ public final class StructureQuarryVisualRefresh {
                 world.sendBlockUpdated(pos, state, state, Block.UPDATE_CLIENTS);
             }
         }
+    }
+
+    /** Queues a connection refresh for the end of the current frame-work tick. */
+    public static void markDirty(BlockPos origin) {
+        DEFERRED_ORIGINS.get().add(origin.immutable());
+    }
+
+    /** Applies all deferred refreshes and clears the queue. */
+    public static void flushDeferred(LevelAccessor level) {
+        Set<BlockPos> deferred = DEFERRED_ORIGINS.get();
+        if (deferred.isEmpty()) {
+            return;
+        }
+        for (BlockPos origin : deferred) {
+            refreshAround(level, origin);
+        }
+        deferred.clear();
     }
 }

@@ -1,16 +1,13 @@
 package net.unfamily.another_quarries.mining;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
-import net.unfamily.another_quarries.block.structure.StructureQuarryBlock;
+import net.unfamily.another_quarries.block.structure.StructureQuarryBreakCascade;
 import net.unfamily.another_quarries.block.structure.StructureQuarryVisualRefresh;
 import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.registry.ModBlocks;
@@ -38,12 +35,16 @@ public final class QuarryFrameController {
     private boolean skipped;
     private final List<BlockPos> clearQueue = new ArrayList<>();
     private final List<BlockPos> placeQueue = new ArrayList<>();
+    private final Set<BlockPos> placePending = new HashSet<>();
 
     private boolean validationActive;
     private int validationIndex;
     private int validationFrameTotal;
+    private List<BlockPos> frameValidationList;
     /** Frame positions for post-clear placement; kept until READY. */
     private Set<BlockPos> framePositions;
+    private int clearPullIndex;
+    private int placePullIndex;
 
     public Phase getPhase() {
         return phase;
@@ -79,7 +80,11 @@ public final class QuarryFrameController {
         phase = Phase.VALIDATING;
         clearQueue.clear();
         placeQueue.clear();
+        placePending.clear();
+        clearPullIndex = 0;
+        placePullIndex = 0;
         framePositions = null;
+        frameValidationList = null;
         beginValidationState();
     }
 
@@ -111,28 +116,24 @@ public final class QuarryFrameController {
             phase = Phase.READY;
             clearQueue.clear();
             placeQueue.clear();
+            placePending.clear();
             resetValidationState();
             framePositions = null;
+            frameValidationList = null;
             return;
         }
 
         skipped = false;
-        ensureValidationFrameTotal(quarry, facing);
+        ensureFrameValidationList(quarry, facing);
 
-        int remaining = validationFrameTotal - validationIndex;
-        int budget = ModConfig.frameValidationBlocksPerTick(remaining);
+        int budget = ModConfig.frameValidationBlocksPerTick(validationFrameTotal - validationIndex);
         int maxMiningLevel = QuarryDrillAssigner.resolveDrill(quarry.getEquipmentHandler()).maxMiningLevel();
+        int end = Math.min(validationIndex + budget, validationFrameTotal);
 
-        validationIndex = QuarryAreaLogic.forEachFrameStructureBlockSlice(
-                quarry.getBlockPos(),
-                facing,
-                quarry.getSizeLeft(),
-                quarry.getSizeRight(),
-                quarry.getSizeHeight(),
-                quarry.getSizeDepth(),
-                validationIndex,
-                budget,
-                pos -> inspectFramePosition(level, pos, maxMiningLevel));
+        for (int i = validationIndex; i < end; i++) {
+            inspectFramePosition(level, frameValidationList.get(i), maxMiningLevel);
+        }
+        validationIndex = end;
 
         if (validationIndex >= validationFrameTotal) {
             finishValidation();
@@ -140,7 +141,7 @@ public final class QuarryFrameController {
     }
 
     public void onClearQueueDrained() {
-        if (phase == Phase.CLEARING && clearQueue.isEmpty()) {
+        if (phase == Phase.CLEARING) {
             advancePhaseFromQueues();
         }
     }
@@ -152,30 +153,27 @@ public final class QuarryFrameController {
         if (!level.getBlockState(pos).isAir()) {
             return;
         }
-        if (!placeQueue.contains(pos)) {
+        if (placePending.add(pos)) {
             placeQueue.add(pos);
         }
     }
 
-    private void ensureValidationFrameTotal(QuarryBlockEntity quarry, Direction facing) {
-        if (validationFrameTotal > 0) {
+    private void ensureFrameValidationList(QuarryBlockEntity quarry, Direction facing) {
+        if (frameValidationList != null) {
             return;
         }
-        validationFrameTotal = QuarryAreaLogic.frameStructureBlockCount(
+        frameValidationList = QuarryAreaLogic.buildFramePositionList(
                 quarry.getBlockPos(),
                 facing,
                 quarry.getSizeLeft(),
                 quarry.getSizeRight(),
                 quarry.getSizeHeight(),
                 quarry.getSizeDepth());
+        validationFrameTotal = frameValidationList.size();
+        framePositions = new HashSet<>(frameValidationList);
     }
 
     private void inspectFramePosition(ServerLevel level, BlockPos pos, int maxMiningLevel) {
-        if (framePositions == null) {
-            framePositions = new HashSet<>();
-        }
-        framePositions.add(pos);
-
         if (!level.isLoaded(pos)) {
             return;
         }
@@ -184,12 +182,14 @@ public final class QuarryFrameController {
             return;
         }
         if (!state.isAir()) {
-            if (QuarryMiningFilters.isMineable(level, pos, maxMiningLevel)) {
+            if (QuarryMiningFilters.isFrameObstruction(level, pos, maxMiningLevel)) {
                 clearQueue.add(pos);
             }
             return;
         }
-        placeQueue.add(pos);
+        if (placePending.add(pos)) {
+            placeQueue.add(pos);
+        }
     }
 
     private void finishValidation() {
@@ -200,24 +200,53 @@ public final class QuarryFrameController {
     private void advancePhaseFromQueues() {
         if (!clearQueue.isEmpty()) {
             phase = Phase.CLEARING;
+            clearPullIndex = 0;
         } else if (!placeQueue.isEmpty()) {
             phase = Phase.PLACING;
+            placePullIndex = 0;
         } else {
             phase = Phase.READY;
             framePositions = null;
+            frameValidationList = null;
         }
     }
 
     public void onPlaceFinished() {
-        if (placeQueue.isEmpty()) {
+        if (phase == Phase.PLACING) {
             phase = Phase.READY;
             framePositions = null;
+            frameValidationList = null;
         }
+    }
+
+    public boolean isClearWorkComplete(Level level) {
+        if (clearQueue.isEmpty()) {
+            return true;
+        }
+        for (int i = clearPullIndex; i < clearQueue.size(); i++) {
+            if (needsClearing(level, clearQueue.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean isPlaceWorkComplete(Level level) {
+        if (placeQueue.isEmpty()) {
+            return true;
+        }
+        for (int i = placePullIndex; i < placeQueue.size(); i++) {
+            if (level.getBlockState(placeQueue.get(i)).isAir()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public BlockPos takeNextClearTarget(Level level, Set<BlockPos> reserved) {
         int maxMiningLevel = QuarryMiningLevels.TIER_MODDED;
-        for (BlockPos pos : clearQueue) {
+        while (clearPullIndex < clearQueue.size()) {
+            BlockPos pos = clearQueue.get(clearPullIndex++);
             if (reserved.contains(pos)) {
                 continue;
             }
@@ -236,12 +265,12 @@ public final class QuarryFrameController {
     }
 
     public BlockPos takeNextPlaceTarget(Level level, Set<BlockPos> reserved) {
-        for (BlockPos pos : placeQueue) {
+        while (placePullIndex < placeQueue.size()) {
+            BlockPos pos = placeQueue.get(placePullIndex++);
             if (reserved.contains(pos)) {
                 continue;
             }
-            BlockState state = level.getBlockState(pos);
-            if (state.isAir()) {
+            if (level.getBlockState(pos).isAir()) {
                 return pos;
             }
         }
@@ -253,12 +282,13 @@ public final class QuarryFrameController {
         if (!current.is(ModBlocks.STRUCTURE_QUARRY.get())) {
             return false;
         }
-        if (!level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), net.minecraft.world.level.block.Block.UPDATE_ALL)) {
-            return false;
-        }
-        StructureQuarryBlock.updateConnectionsAround(level, pos);
-        StructureQuarryVisualRefresh.refreshAround(level, pos);
-        return true;
+        StructureQuarryBreakCascade.runWithoutCascade(() -> {
+            if (!level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), net.minecraft.world.level.block.Block.UPDATE_ALL)) {
+                return;
+            }
+            StructureQuarryVisualRefresh.markDirty(pos);
+        });
+        return level.getBlockState(pos).isAir();
     }
 
     public boolean placeFrameBlock(ServerLevel level, BlockPos pos) {
@@ -270,26 +300,26 @@ public final class QuarryFrameController {
         if (!level.setBlock(pos, placed, net.minecraft.world.level.block.Block.UPDATE_ALL)) {
             return false;
         }
-        StructureQuarryBlock.updateConnectionsAround(level, pos);
-        StructureQuarryVisualRefresh.refreshAround(level, pos);
+        StructureQuarryVisualRefresh.markDirty(pos);
         return true;
     }
 
-    public void pruneCompletedClearTargets(Level level) {
-        clearQueue.removeIf(pos -> {
-            BlockState state = level.getBlockState(pos);
-            return state.isAir();
-        });
-    }
-
-    public void pruneCompletedPlaceTargets(Level level) {
-        placeQueue.removeIf(pos -> level.getBlockState(pos).is(ModBlocks.STRUCTURE_QUARRY.get()));
+    private boolean needsClearing(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir()) {
+            return false;
+        }
+        if (state.is(ModBlocks.STRUCTURE_QUARRY.get())) {
+            return true;
+        }
+        return QuarryMiningFilters.isMineable(level, pos, QuarryMiningLevels.TIER_MODDED);
     }
 
     private void resetValidationState() {
         validationActive = false;
         validationIndex = 0;
         validationFrameTotal = 0;
+        frameValidationList = null;
     }
 
     private void beginValidationState() {
@@ -315,8 +345,12 @@ public final class QuarryFrameController {
         tag.getInt("FrameValidationCooldown");
         clearQueue.clear();
         placeQueue.clear();
+        placePending.clear();
+        clearPullIndex = 0;
+        placePullIndex = 0;
         resetValidationState();
         framePositions = null;
+        frameValidationList = null;
         if (!skipped && phase != Phase.READY) {
             phase = Phase.READY;
         }

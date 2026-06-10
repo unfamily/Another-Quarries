@@ -62,6 +62,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private static final int ARROW_GROUP_CENTER_X = ARROW_GROUP_LEFT_X + ARROW_GROUP_WIDTH / 2;
     private static final int PREVIEW_BUTTON_Y = ROW1_Y;
     private static final int SIZE_LABEL_Y = ROW2_Y + BUTTON_H + 2;
+    private static final int CHUNKS_LABEL_Y = QuarryMenu.EQUIPMENT_SLOTS_Y + 18;
     private static final int DIGGING_MODE_X = PREVIEW_BUTTON_X;
     private static final int DIGGING_MODE_Y = ROW2_Y;
     private static final int DIGGING_MODE_W = PREVIEW_BUTTON_W;
@@ -301,12 +302,19 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         renderEnergyBar(guiGraphics);
         renderAreaLabel(guiGraphics);
+        renderChunksProgressLabel(guiGraphics);
+        this.renderTooltip(guiGraphics, mouseX, mouseY);
+    }
+
+    @Override
+    protected void renderTooltip(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        super.renderTooltip(guiGraphics, mouseX, mouseY);
+        renderGhostTooltips(guiGraphics, mouseX, mouseY);
+        renderEnergyTooltip(guiGraphics, mouseX, mouseY);
         if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
             MachineGuiButtons.renderTooltipLine(guiGraphics, font, mouseX, mouseY,
                     MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), false));
         }
-        renderEnergyTooltip(guiGraphics, mouseX, mouseY);
-        renderGhostTooltips(guiGraphics, mouseX, mouseY);
     }
 
     @Override
@@ -348,6 +356,19 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
                 menu.getAreaHeight(),
                 menu.getAreaDepth());
         drawCenteredText(guiGraphics, sizeLabel, labelCenterX, this.topPos + SIZE_LABEL_Y, 0x404040);
+    }
+
+    private void renderChunksProgressLabel(GuiGraphics guiGraphics) {
+        int total = menu.getTotalAreaChunkCount();
+        if (total <= 1) {
+            return;
+        }
+        int centerX = this.leftPos + this.imageWidth / 2;
+        Component label = Component.translatable(
+                "gui.another_quarries.quarry.chunks_progress",
+                menu.getProcessedAreaChunkCount(),
+                total);
+        drawCenteredText(guiGraphics, label, centerX, this.topPos + CHUNKS_LABEL_Y, 0x404040);
     }
 
     private void renderGhostItems(GuiGraphics guiGraphics) {
@@ -407,6 +428,9 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     }
 
     private void renderGhostTooltips(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        if (!this.menu.getCarried().isEmpty()) {
+            return;
+        }
         for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
             Slot slot = menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot));
             if (slot == null || !slot.getItem().isEmpty() || !isMouseOverSlot(slot, mouseX, mouseY)) {
@@ -415,11 +439,12 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
             if (equipmentSlot == QuarryEquipmentSlots.enchantModuleSlot()) {
                 ItemStack ghost = enchantGhostCycle.getOrDefault(ENCHANT_GHOST_STACKS, ENCHANT_GHOST_STACKS.get(0));
                 guiGraphics.renderTooltip(this.font, ghost, mouseX, mouseY);
-                continue;
+                return;
             }
             ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
             if (!ghost.isEmpty()) {
                 guiGraphics.renderTooltip(this.font, ghost, mouseX, mouseY);
+                return;
             }
         }
     }

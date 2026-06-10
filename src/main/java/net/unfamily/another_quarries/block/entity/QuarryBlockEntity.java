@@ -60,11 +60,11 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     public static final int MODULE_SLOT_COUNT = 3;
 
     private static final int MIN_HEIGHT_OR_DEPTH = 0;
-    /** Default block count per axis when the quarry is first placed (15×15×15). */
+    /** Default block count per axis when the quarry is first placed (15×15 footprint, height 5). */
     private static final int DEFAULT_AXIS_BLOCKS = 15;
     private static final int DEFAULT_SIZE_LEFT = (DEFAULT_AXIS_BLOCKS - 1) / 2;
     private static final int DEFAULT_SIZE_RIGHT = DEFAULT_AXIS_BLOCKS - 1 - DEFAULT_SIZE_LEFT;
-    private static final int DEFAULT_SIZE_HEIGHT = DEFAULT_AXIS_BLOCKS - 1;
+    private static final int DEFAULT_SIZE_HEIGHT = 4;
     private static final int DEFAULT_SIZE_DEPTH = DEFAULT_AXIS_BLOCKS - 1;
 
     private int sizeLeft = DEFAULT_SIZE_LEFT;
@@ -88,6 +88,11 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             @Override
             protected void onContentsChanged(int slot) {
                 setChanged();
+            }
+
+            @Override
+            public boolean isItemValid(int slot, ItemStack stack) {
+                return !ModItems.isQuarryEquipment(stack);
             }
         };
         this.equipmentHandler = new ItemStackHandler(QuarryEquipmentSlots.slotCount()) {
@@ -167,6 +172,14 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
 
     public int getSizeDepth() {
         return sizeDepth;
+    }
+
+    public int getTotalAreaChunkCount() {
+        return miningEngine.getTotalAreaChunkCount();
+    }
+
+    public int getProcessedAreaChunkCount() {
+        return miningEngine.getProcessedAreaChunkCount();
     }
 
     public boolean isPreviewEnabled() {

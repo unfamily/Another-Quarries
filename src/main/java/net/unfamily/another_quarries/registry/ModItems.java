@@ -9,6 +9,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.item.DescribedBlockItem;
 import net.unfamily.another_quarries.item.DescribedItem;
+import net.unfamily.another_quarries.item.QuarryModules;
 
 public final class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(AnotherQuarries.MOD_ID);
@@ -60,6 +61,10 @@ public final class ModItems {
 
     public static boolean isAnyDrill(ItemStack stack) {
         return isDiamondDrill(stack) || isNetheriteDrill(stack);
+    }
+
+    public static boolean isQuarryEquipment(ItemStack stack) {
+        return isDrone(stack) || isAnyDrill(stack) || QuarryModules.isModule(stack);
     }
 
     /** Maps removed laser drill items to netherite for existing saves. */

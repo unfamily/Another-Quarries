@@ -13,7 +13,11 @@ import net.unfamily.another_quarries.registry.ModCreativeModeTabs;
 import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.registry.ModMenuTypes;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.world.chunk.RegisterTicketControllersEvent;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
+import net.minecraft.server.level.ServerLevel;
+import net.unfamily.another_quarries.block.structure.StructureQuarryBreakCascade;
 import net.unfamily.another_quarries.mining.QuarryChunkTickets;
 
 @Mod(AnotherQuarries.MOD_ID)
@@ -29,6 +33,13 @@ public final class AnotherQuarries {
         ModBlockEntities.register(modEventBus);
         ModMenuTypes.register(modEventBus);
         ModCreativeModeTabs.register(modEventBus);
+        NeoForge.EVENT_BUS.addListener(AnotherQuarries::onLevelTickPost);
+    }
+
+    private static void onLevelTickPost(LevelTickEvent.Post event) {
+        if (event.getLevel() instanceof ServerLevel server) {
+            StructureQuarryBreakCascade.tick(server);
+        }
     }
 
     @EventBusSubscriber(modid = MOD_ID)

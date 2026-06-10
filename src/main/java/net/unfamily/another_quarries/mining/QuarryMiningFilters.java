@@ -77,6 +77,31 @@ public final class QuarryMiningFilters {
         return QuarryMiningLevels.isWithinMiningLevel(state, maxMiningLevel);
     }
 
+    /** Fast path for frame validation scan only — no block entity / capability lookups. */
+    public static boolean isFrameObstruction(Level level, BlockPos pos, int maxMiningLevel) {
+        if (level.isEmptyBlock(pos)) {
+            return false;
+        }
+        BlockState state = level.getBlockState(pos);
+        if (state.getBlock() instanceof LiquidBlock) {
+            return false;
+        }
+        if (!state.getFluidState().isEmpty() && state.canBeReplaced()) {
+            return false;
+        }
+        if (state.getDestroySpeed(level, pos) < 0) {
+            return false;
+        }
+        Block block = state.getBlock();
+        if (matchesDenyList(block)) {
+            return false;
+        }
+        if (allowListActive && !matchesAllowList(block)) {
+            return false;
+        }
+        return QuarryMiningLevels.isWithinMiningLevel(state, maxMiningLevel);
+    }
+
     private static boolean matchesDenyList(Block block) {
         if (denyBlocks.contains(block)) {
             return true;
