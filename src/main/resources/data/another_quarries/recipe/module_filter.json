@@ -1,22 +1,16 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    " H ",
+    " A ",
     "ABA",
-    " C "
+    " A "
   ],
   "key": {
-    "H": {
-      "item": "minecraft:hopper"
-    },
     "A": {
-      "tag": "c:storage_blocks/copper"
+      "item": "minecraft:paper"
     },
     "B": {
       "item": "another_quarries:module_base"
-    },
-    "C": {
-      "item": "minecraft:iron_bars"
     }
   },
   "result": {

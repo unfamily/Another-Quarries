@@ -1,14 +1,11 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    " L ",
+    " A ",
     "ABA",
-    " L "
+    " A "
   ],
   "key": {
-    "L": {
-      "item": "minecraft:lapis_lazuli"
-    },
     "A": {
       "item": "minecraft:book"
     },
