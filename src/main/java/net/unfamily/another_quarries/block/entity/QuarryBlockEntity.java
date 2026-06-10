@@ -1,11 +1,11 @@
 package net.unfamily.another_quarries.block.entity;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import com.mojang.serialization.Codec;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Containers;
 import net.minecraft.world.ItemStackWithSlot;
 import net.minecraft.world.MenuProvider;
@@ -28,6 +28,7 @@ import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
 import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.mining.QuarryChunkTickets;
 import net.unfamily.another_quarries.mining.QuarryDrillAssigner;
+import net.unfamily.another_quarries.item.QuarryFilterModuleData;
 import net.unfamily.another_quarries.mining.QuarryMiningEngine;
 import net.unfamily.another_quarries.mining.QuarryOutputHandler;
 import net.unfamily.another_quarries.registry.ModBlockEntities;
@@ -42,6 +43,9 @@ import net.neoforged.neoforge.transfer.item.ItemResource;
 import org.jspecify.annotations.Nullable;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     public static final int BUFFER_SLOT_COUNT = 27;
@@ -86,7 +90,6 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private final ResourceHandler<ItemResource> itemTransferHandler;
     private final QuarryMiningEngine miningEngine;
     private final LongOpenHashSet forcedMiningChunks = new LongOpenHashSet();
-
     public QuarryBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.QUARRY_BE.get(), pos, state);
         this.bufferHandler = new ItemStackHandler(BUFFER_SLOT_COUNT) {
@@ -322,12 +325,50 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public int estimatedRfPerBlock() {
+        var registries = level != null ? level.registryAccess() : null;
+        ItemStackHandler equipment = equipmentHandler;
+        ItemStack enchantStack = equipment.getStackInSlot(QuarryEquipmentSlots.enchantModuleSlot());
+        boolean enchantModule = enchantStack.is(ModItems.MODULE_ENCHANT.get());
+        boolean filterModule = QuarryEquipmentSlots.hasFilterModule(equipment);
+        if (enchantModule && registries != null) {
+            return ModConfig.totalRfPerBlock(
+                    QuarryEquipmentSlots.diggerModuleCount(equipment),
+                    QuarryEquipmentSlots.speedModuleCount(equipment),
+                    0,
+                    false,
+                    filterModule,
+                    QuarryEquipmentSlots.rawEnchantModuleFortuneLevel(equipment, registries),
+                    QuarryEquipmentSlots.rawEnchantModuleSilkTouch(equipment, registries),
+                    QuarryDrillAssigner.resolveDrill(equipment));
+        }
         return ModConfig.totalRfPerBlock(
-                QuarryEquipmentSlots.diggerModuleCount(equipmentHandler),
-                QuarryEquipmentSlots.speedModuleCount(equipmentHandler),
-                QuarryEquipmentSlots.fortuneLevel(equipmentHandler),
-                QuarryEquipmentSlots.hasSilkTouch(equipmentHandler),
-                QuarryDrillAssigner.resolveDrill(equipmentHandler));
+                QuarryEquipmentSlots.diggerModuleCount(equipment),
+                QuarryEquipmentSlots.speedModuleCount(equipment),
+                QuarryEquipmentSlots.fortuneLevel(equipment, registries),
+                QuarryEquipmentSlots.hasSilkTouch(equipment, registries),
+                filterModule,
+                0,
+                false,
+                QuarryDrillAssigner.resolveDrill(equipment));
+    }
+
+    public void openMenu(Player player) {
+        if (!(player instanceof ServerPlayer serverPlayer)) {
+            return;
+        }
+        serverPlayer.openMenu(this, buf -> buf.writeBlockPos(getBlockPos()));
+    }
+
+    public boolean isFilterModuleActive() {
+        return QuarryEquipmentSlots.hasFilterModule(equipmentHandler);
+    }
+
+    public List<String> getActiveItemDenyFilters() {
+        if (!isFilterModuleActive()) {
+            return List.of();
+        }
+        ItemStack filterStack = equipmentHandler.getStackInSlot(QuarryEquipmentSlots.filterModuleSlot());
+        return QuarryFilterModuleData.getDestroyList(filterStack);
     }
 
     public boolean canWork() {
@@ -460,18 +501,60 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         redstoneMode = normalizeRedstoneMode(input.getIntOr("RedstoneMode", 0));
         previousCanWork = input.getBooleanOr("PreviousCanWork", false);
         energyStorage.setEnergy(input.getIntOr("Energy", 0));
-        int equipmentVersion = input.getIntOr("EquipmentVersion", 1);
-        if (equipmentVersion < QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION) {
-            migrateLegacyEquipment(input, equipmentHandler, equipmentVersion);
-        } else {
-            loadHandlerSlots(input, "Equipment", equipmentHandler);
-        }
-        loadHandlerSlots(input, "Buffer", bufferHandler);
+        loadEquipmentFromSave(input, equipmentHandler);
+        loadBufferFromSave(input, bufferHandler);
         migrateRemovedDrills(equipmentHandler);
         miningEngine.load(input);
         refreshEnergyCapacity();
         if (level != null && !level.isClientSide()) {
             previousCanWork = canWork();
+        }
+    }
+
+    /**
+     * Layout v4+ stores equipment by absolute slot index. Never run {@link #migrateLegacyEquipment} for v4+ —
+     * that path only reads legacy v2 module indices (5/6/7) and wipes digger/speed/enchant modules.
+     */
+    private static void loadEquipmentFromSave(ValueInput input, ItemStackHandler handler) {
+        int equipmentVersion = resolveEquipmentVersion(input);
+        clearHandlerSlots(handler);
+        if (equipmentVersion >= 4) {
+            loadHandlerSlots(input, "Equipment", handler);
+            return;
+        }
+        if (equipmentVersion < QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION) {
+            migrateLegacyEquipment(input, handler, equipmentVersion);
+        } else {
+            loadHandlerSlots(input, "Equipment", handler);
+        }
+    }
+
+    private static void loadBufferFromSave(ValueInput input, ItemStackHandler handler) {
+        clearHandlerSlots(handler);
+        loadHandlerSlots(input, "Buffer", handler);
+    }
+
+    private static int resolveEquipmentVersion(ValueInput input) {
+        int version = input.getIntOr("EquipmentVersion", -1);
+        if (version > 0) {
+            return version;
+        }
+        int maxSlot = -1;
+        for (ItemStackWithSlot entry : input.listOrEmpty("Equipment", ItemStackWithSlot.CODEC)) {
+            maxSlot = Math.max(maxSlot, entry.slot());
+        }
+        if (maxSlot >= 2) {
+            return 4;
+        }
+        if (maxSlot >= 0) {
+            return 3;
+        }
+        return 1;
+    }
+
+    private static void clearHandlerSlots(ItemStackHandler handler) {
+        for (int i = 0; i < handler.getSlots(); i++) {
+            handler.setStackInSlot(i, ItemStack.EMPTY);
         }
     }
 
@@ -498,14 +581,17 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private static final int LEGACY_V2_ENCHANT_SLOT = 7;
 
     private static void migrateLegacyEquipment(ValueInput input, ItemStackHandler handler, int fromVersion) {
+        if (fromVersion >= 4) {
+            loadHandlerSlots(input, "Equipment", handler);
+            return;
+        }
+
         java.util.HashMap<Integer, ItemStack> bySlot = new java.util.HashMap<>();
         for (ItemStackWithSlot entry : input.listOrEmpty("Equipment", ItemStackWithSlot.CODEC)) {
             bySlot.put(entry.slot(), entry.stack());
         }
 
-        for (int i = 0; i < handler.getSlots(); i++) {
-            handler.setStackInSlot(i, ItemStack.EMPTY);
-        }
+        clearHandlerSlots(handler);
 
         if (fromVersion == 3) {
             migrateFromLayoutV3(handler, bySlot);
@@ -611,6 +697,17 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     private static void migrateLegacyModules(ItemStackHandler handler, java.util.Map<Integer, ItemStack> bySlot, int fromVersion) {
+        if (fromVersion >= 4) {
+            for (var entry : bySlot.entrySet()) {
+                int slot = entry.getKey();
+                ItemStack stack = entry.getValue();
+                if (slot >= 0 && slot < handler.getSlots() && stack != null && !stack.isEmpty()) {
+                    handler.setStackInSlot(slot, stack);
+                }
+            }
+            return;
+        }
+
         int[] diggerCount = {0};
         int[] speedCount = {0};
         ItemStack[] fortuneStack = {ItemStack.EMPTY};

@@ -2,6 +2,8 @@ package net.unfamily.another_quarries.mining;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.ItemStack;
@@ -50,7 +52,12 @@ public final class QuarryBlockBreaker {
         if (!level.removeBlock(pos, false)) {
             return false;
         }
+        HolderLookup.Provider registries = level.registryAccess();
         for (ItemStack drop : drops) {
+            if (ctx.voidFilteredDrops()
+                    && QuarryItemFilterMatcher.matchesAny(ctx.itemDenyFilters(), drop, registries)) {
+                continue;
+            }
             insertIntoBuffer(buffer, drop);
         }
         return true;

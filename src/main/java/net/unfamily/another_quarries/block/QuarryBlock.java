@@ -7,6 +7,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.StringRepresentable;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -28,7 +29,9 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.item.ItemStack;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.block.structure.StructureQuarryVisualRefresh;
+import net.unfamily.another_quarries.item.QuarryEquipmentInstaller;
 import net.unfamily.another_quarries.registry.ModBlockEntities;
+import net.unfamily.another_quarries.registry.ModItems;
 
 import org.jspecify.annotations.Nullable;
 
@@ -88,13 +91,35 @@ public final class QuarryBlock extends BaseEntityBlock {
     }
 
     @Override
+    protected InteractionResult useItemOn(
+            ItemStack stack,
+            BlockState state,
+            Level level,
+            BlockPos pos,
+            Player player,
+            InteractionHand hand,
+            BlockHitResult hitResult) {
+        if (player.isSecondaryUseActive()) {
+            if (level.isClientSide()) {
+                return InteractionResult.SUCCESS;
+            }
+            if (level.getBlockEntity(pos) instanceof QuarryBlockEntity quarry
+                    && QuarryEquipmentInstaller.tryInstallFromHand(quarry, player, hand)) {
+                return InteractionResult.CONSUME;
+            }
+            return InteractionResult.PASS;
+        }
+        return super.useItemOn(stack, state, level, pos, player, hand, hitResult);
+    }
+
+    @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
         if (level.isClientSide()) {
             return InteractionResult.SUCCESS;
         }
         BlockEntity blockEntity = level.getBlockEntity(pos);
         if (blockEntity instanceof QuarryBlockEntity quarry && player instanceof ServerPlayer serverPlayer) {
-            serverPlayer.openMenu(quarry, pos);
+            quarry.openMenu(serverPlayer);
             return InteractionResult.CONSUME;
         }
         return InteractionResult.PASS;

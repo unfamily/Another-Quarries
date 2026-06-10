@@ -9,6 +9,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.item.DescribedBlockItem;
 import net.unfamily.another_quarries.item.DescribedItem;
+import net.unfamily.another_quarries.item.EnchantableQuarryModuleItem;
+import net.unfamily.another_quarries.item.QuarryFilterModuleItem;
 import net.unfamily.another_quarries.item.QuarryModules;
 
 import java.util.function.UnaryOperator;
@@ -47,6 +49,20 @@ public final class ModItems {
             UnaryOperator.identity());
     public static final DeferredItem<Item> MODULE_FORTUNE = ITEMS.registerItem("module_fortune",
             props -> new DescribedItem(props, "tooltip.another_quarries.module_fortune.desc"),
+            UnaryOperator.identity());
+    public static final DeferredItem<Item> MODULE_FILTER = ITEMS.registerItem("module_filter",
+            props -> new QuarryFilterModuleItem(
+                    props,
+                    "tooltip.another_quarries.module_filter.desc0",
+                    "tooltip.another_quarries.module_filter.desc1"),
+            UnaryOperator.identity());
+    /** Must match {@link net.unfamily.another_quarries.config.ModConfig#defaultModuleEnchantability()}; config is not loaded at register time. */
+    private static final int MODULE_ENCHANT_ENCHANTABILITY = 15;
+
+    public static final DeferredItem<Item> MODULE_ENCHANT = ITEMS.registerItem("module_enchant",
+            props -> new EnchantableQuarryModuleItem(
+                    props.stacksTo(1).enchantable(MODULE_ENCHANT_ENCHANTABILITY),
+                    "tooltip.another_quarries.module_enchant.desc"),
             UnaryOperator.identity());
     public static final DeferredItem<Item> ARTIFICIAL_EYE = ITEMS.registerSimpleItem("artificial_eye");
 

@@ -4,6 +4,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.item.ItemStack;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
 
+import java.util.List;
+
 public record QuarryWorkContext(
         QuarryDrillType drill,
         int diggerModules,
@@ -13,5 +15,7 @@ public record QuarryWorkContext(
         int rfPerBlock,
         Direction facing,
         QuarryDiggingMode diggingMode,
-        ItemStack breakTool) {
+        ItemStack breakTool,
+        boolean voidFilteredDrops,
+        List<String> itemDenyFilters) {
 }

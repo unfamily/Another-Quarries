@@ -13,6 +13,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.unfamily.another_quarries.client.CompositeGeometry;
+import net.unfamily.another_quarries.client.gui.QuarryFilterModuleScreen;
 import net.unfamily.another_quarries.client.gui.QuarryScreen;
 import net.unfamily.another_quarries.client.structure.StructureQuarryBlockStateModel;
 import net.unfamily.another_quarries.client.structure.StructureQuarryItemModel;
@@ -33,6 +34,7 @@ public final class AnotherQuarriesClient {
     @SubscribeEvent
     static void onRegisterMenuScreens(RegisterMenuScreensEvent event) {
         event.register(ModMenuTypes.QUARRY_MENU.get(), QuarryScreen::new);
+        event.register(ModMenuTypes.QUARRY_FILTER_MODULE_MENU.get(), QuarryFilterModuleScreen::new);
     }
 
     @SubscribeEvent

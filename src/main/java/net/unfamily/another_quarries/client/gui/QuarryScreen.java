@@ -24,6 +24,7 @@ import net.unfamily.another_quarries.network.packet.QuarryRebootC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRedstoneModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarrySizeC2SPacket;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
+import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
@@ -79,7 +80,9 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private static final ItemStack GHOST_DRILL = new ItemStack(ModItems.DRILL_DIAMOND.get());
     private static final ItemStack GHOST_DIGGER = new ItemStack(ModItems.MODULE_DIGGER.get());
     private static final ItemStack GHOST_SPEED = new ItemStack(ModItems.MODULE_SPEED.get());
-    private static final ItemStack GHOST_FORTUNE = new ItemStack(ModItems.MODULE_FORTUNE.get());
+    private static final List<ItemStack> ENCHANT_GHOST_STACKS = QuarryModules.enchantGhostStacks();
+
+    private final GuiCycleTimer enchantGhostCycle = new GuiCycleTimer(() -> 1000);
 
     private Button closeButton;
     private Button rebootButton;
@@ -366,15 +369,21 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
 
     private void renderGhostItems(GuiGraphicsExtractor guiGraphics) {
         for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
-            ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
-            if (!ghost.isEmpty()) {
-                GuiGhostItem.render(
+            Slot slot = menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot));
+            if (equipmentSlot == QuarryEquipmentSlots.enchantModuleSlot()) {
+                GuiGhostItem.renderCycling(
                         guiGraphics,
                         leftPos,
                         topPos,
-                        menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot)),
-                        ghost,
+                        slot,
+                        ENCHANT_GHOST_STACKS,
+                        enchantGhostCycle,
                         GuiGhostItem.DEFAULT_ARGB);
+                continue;
+            }
+            ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
+            if (!ghost.isEmpty()) {
+                GuiGhostItem.render(guiGraphics, leftPos, topPos, slot, ghost, GuiGhostItem.DEFAULT_ARGB);
             }
         }
     }
@@ -437,6 +446,11 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
             if (slot == null || !slot.getItem().isEmpty() || !isMouseOverSlot(slot, mouseX, mouseY)) {
                 continue;
             }
+            if (equipmentSlot == QuarryEquipmentSlots.enchantModuleSlot()) {
+                ItemStack ghost = enchantGhostCycle.getOrDefault(ENCHANT_GHOST_STACKS, ENCHANT_GHOST_STACKS.get(0));
+                guiGraphics.setTooltipForNextFrame(this.font, ghost, mouseX, mouseY);
+                return;
+            }
             ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
             if (!ghost.isEmpty()) {
                 guiGraphics.setTooltipForNextFrame(this.font, ghost, mouseX, mouseY);
@@ -464,8 +478,8 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (equipmentSlot == QuarryEquipmentSlots.speedModuleSlot()) {
             return GHOST_SPEED;
         }
-        if (equipmentSlot == QuarryEquipmentSlots.enchantModuleSlot()) {
-            return GHOST_FORTUNE;
+        if (equipmentSlot == QuarryEquipmentSlots.filterModuleSlot()) {
+            return new ItemStack(ModItems.MODULE_FILTER.get());
         }
         return ItemStack.EMPTY;
     }

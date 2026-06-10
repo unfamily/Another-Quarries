@@ -1,20 +1,25 @@
 package net.unfamily.another_quarries.item;
 
+import net.minecraft.core.Holder;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.registry.ModItems;
 
 public final class QuarryEquipmentSlots {
-    private static final int UPGRADE_SLOT_COUNT = 3;
+    private static final int UPGRADE_SLOT_COUNT = 4;
 
     /** Built-in worker when no drones are installed; slot drones are extra workers on top. */
     public static final int BASE_WORKER_COUNT = 1;
 
     public static final int MAX_DRILL_STACK = 1;
 
-    public static final int EQUIPMENT_LAYOUT_VERSION = 4;
+    public static final int EQUIPMENT_LAYOUT_VERSION = 5;
 
     /** Layout v3 indices kept for NBT migration only. */
     private static final int LEGACY_V3_DRONE_SLOT = 0;
@@ -41,7 +46,7 @@ public final class QuarryEquipmentSlots {
         return ModConfig.equipmentDrillSlots();
     }
 
-    /** Handler slots: drones + drills + digger/speed/enchant. */
+    /** Handler slots: drones + drills + digger/speed/enchant/filter. */
     public static int slotCount() {
         return droneSlotCount() + drillSlotCount() + UPGRADE_SLOT_COUNT;
     }
@@ -64,6 +69,10 @@ public final class QuarryEquipmentSlots {
 
     public static int enchantModuleSlot() {
         return diggerModuleSlot() + 2;
+    }
+
+    public static int filterModuleSlot() {
+        return diggerModuleSlot() + 3;
     }
 
     /** @deprecated use {@link #drillSlotStart()} */
@@ -97,7 +106,12 @@ public final class QuarryEquipmentSlots {
             return stack.is(ModItems.MODULE_SPEED.get());
         }
         if (slot == enchantModuleSlot()) {
-            return stack.is(ModItems.MODULE_FORTUNE.get()) || stack.is(ModItems.MODULE_SILK_TOUCH.get());
+            return stack.is(ModItems.MODULE_FORTUNE.get())
+                    || stack.is(ModItems.MODULE_SILK_TOUCH.get())
+                    || stack.is(ModItems.MODULE_ENCHANT.get());
+        }
+        if (slot == filterModuleSlot()) {
+            return stack.is(ModItems.MODULE_FILTER.get());
         }
         return false;
     }
@@ -118,6 +132,9 @@ public final class QuarryEquipmentSlots {
         if (slot == enchantModuleSlot()) {
             return enchantCap(handler.getStackInSlot(enchantModuleSlot()));
         }
+        if (slot == filterModuleSlot()) {
+            return ModConfig.maxFilterModules();
+        }
         return 0;
     }
 
@@ -130,6 +147,9 @@ public final class QuarryEquipmentSlots {
         }
         if (stack.is(ModItems.MODULE_FORTUNE.get())) {
             return ModConfig.maxFortuneModules();
+        }
+        if (stack.is(ModItems.MODULE_ENCHANT.get())) {
+            return 1;
         }
         return 0;
     }
@@ -155,16 +175,67 @@ public final class QuarryEquipmentSlots {
         return handler.getStackInSlot(speedModuleSlot()).getCount();
     }
 
+    public static boolean hasFilterModule(ItemStackHandler handler) {
+        return !handler.getStackInSlot(filterModuleSlot()).isEmpty();
+    }
+
     public static int fortuneLevel(ItemStackHandler handler) {
+        return fortuneLevel(handler, null);
+    }
+
+    public static int fortuneLevel(ItemStackHandler handler, HolderLookup.Provider registries) {
         ItemStack stack = handler.getStackInSlot(enchantModuleSlot());
         if (stack.is(ModItems.MODULE_FORTUNE.get())) {
             return Math.min(stack.getCount(), ModConfig.maxFortuneModules());
+        }
+        if (stack.is(ModItems.MODULE_ENCHANT.get()) && registries != null) {
+            if (hasSilkTouch(handler, registries)) {
+                return 0;
+            }
+            var lookup = registries.lookupOrThrow(Registries.ENCHANTMENT);
+            return Math.min(
+                    enchantLevel(stack, lookup.getOrThrow(Enchantments.FORTUNE)),
+                    ModConfig.maxFortuneModules());
         }
         return 0;
     }
 
     public static boolean hasSilkTouch(ItemStackHandler handler) {
-        return handler.getStackInSlot(enchantModuleSlot()).is(ModItems.MODULE_SILK_TOUCH.get());
+        return hasSilkTouch(handler, null);
+    }
+
+    public static boolean hasSilkTouch(ItemStackHandler handler, HolderLookup.Provider registries) {
+        ItemStack stack = handler.getStackInSlot(enchantModuleSlot());
+        if (stack.is(ModItems.MODULE_SILK_TOUCH.get())) {
+            return true;
+        }
+        if (stack.is(ModItems.MODULE_ENCHANT.get()) && registries != null) {
+            var lookup = registries.lookupOrThrow(Registries.ENCHANTMENT);
+            return enchantLevel(stack, lookup.getOrThrow(Enchantments.SILK_TOUCH)) > 0;
+        }
+        return false;
+    }
+
+    public static int rawEnchantModuleFortuneLevel(ItemStackHandler handler, HolderLookup.Provider registries) {
+        ItemStack stack = handler.getStackInSlot(enchantModuleSlot());
+        if (!stack.is(ModItems.MODULE_ENCHANT.get()) || registries == null) {
+            return 0;
+        }
+        var lookup = registries.lookupOrThrow(Registries.ENCHANTMENT);
+        return enchantLevel(stack, lookup.getOrThrow(Enchantments.FORTUNE));
+    }
+
+    public static boolean rawEnchantModuleSilkTouch(ItemStackHandler handler, HolderLookup.Provider registries) {
+        ItemStack stack = handler.getStackInSlot(enchantModuleSlot());
+        if (!stack.is(ModItems.MODULE_ENCHANT.get()) || registries == null) {
+            return false;
+        }
+        var lookup = registries.lookupOrThrow(Registries.ENCHANTMENT);
+        return enchantLevel(stack, lookup.getOrThrow(Enchantments.SILK_TOUCH)) > 0;
+    }
+
+    private static int enchantLevel(ItemStack stack, Holder<Enchantment> enchantment) {
+        return stack.getEnchantments().getLevel(enchantment);
     }
 
     public static int equipmentMenuIndex(int equipmentSlot) {
