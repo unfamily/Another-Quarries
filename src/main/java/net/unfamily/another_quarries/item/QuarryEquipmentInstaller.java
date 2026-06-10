@@ -1,8 +1,12 @@
 package net.unfamily.another_quarries.item;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.registry.ModItems;
@@ -10,6 +14,29 @@ import net.unfamily.another_quarries.registry.ModItems;
 /** Installs quarry equipment from the player's hand without opening the quarry GUI. */
 public final class QuarryEquipmentInstaller {
     private QuarryEquipmentInstaller() {}
+
+    /** Shift+use on a quarry block; item {@code useOn} must call this (block use is skipped while sneaking). */
+    public static InteractionResult useOnQuarryBlock(UseOnContext context) {
+        Player player = context.getPlayer();
+        if (player == null || !player.isSecondaryUseActive()) {
+            return InteractionResult.PASS;
+        }
+        Level level = context.getLevel();
+        BlockPos pos = context.getClickedPos();
+        if (!(level.getBlockEntity(pos) instanceof QuarryBlockEntity quarry)) {
+            return InteractionResult.PASS;
+        }
+        ItemStack held = context.getItemInHand();
+        if (held.isEmpty() || !ModItems.isQuarryEquipment(held)) {
+            return InteractionResult.PASS;
+        }
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+        return tryInstallFromHand(quarry, player, context.getHand())
+                ? InteractionResult.CONSUME
+                : InteractionResult.FAIL;
+    }
 
     public static boolean tryInstallFromHand(QuarryBlockEntity quarry, Player player, InteractionHand hand) {
         ItemStack held = player.getItemInHand(hand);

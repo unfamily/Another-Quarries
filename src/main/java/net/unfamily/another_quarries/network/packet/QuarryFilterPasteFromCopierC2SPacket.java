@@ -36,10 +36,11 @@ public record QuarryFilterPasteFromCopierC2SPacket(InteractionHand hand) impleme
                     || menu.getEditHand() != packet.hand()) {
                 return;
             }
-            QuarryFilterCopierCompat.PasteResult result = QuarryFilterCopierCompat.pasteFromCopier(player, packet.hand());
+            QuarryFilterCopierCompat.PasteResult result = QuarryFilterCopierCompat.readFilterLinesFromCopier(player);
             result.sendTo(player);
             if (result.success()) {
-                ModNetworking.sendFilterBulkSync(player, packet.hand());
+                menu.replaceServerDraft(result.lines());
+                ModNetworking.sendFilterBulkSync(player, packet.hand(), menu.getServerDraftForSync());
             }
         });
     }

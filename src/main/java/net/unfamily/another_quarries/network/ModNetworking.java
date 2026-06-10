@@ -9,6 +9,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.unfamily.another_quarries.AnotherQuarries;
+import net.unfamily.another_quarries.client.gui.QuarryFilterModuleMenu;
 import net.unfamily.another_quarries.item.QuarryFilterModuleData;
 import net.unfamily.another_quarries.network.packet.ClearPreviewForOwnerS2CPayload;
 import net.unfamily.another_quarries.network.packet.PreviewMarkerS2CPayload;
@@ -22,6 +23,8 @@ import net.unfamily.another_quarries.network.packet.QuarryPreviewToggleC2SPacket
 import net.unfamily.another_quarries.network.packet.QuarryRebootC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRedstoneModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarrySizeC2SPacket;
+
+import java.util.List;
 
 @EventBusSubscriber(modid = AnotherQuarries.MOD_ID)
 public final class ModNetworking {
@@ -55,9 +58,17 @@ public final class ModNetworking {
     }
 
     public static void sendFilterBulkSync(ServerPlayer player, InteractionHand hand) {
+        if (player.containerMenu instanceof QuarryFilterModuleMenu menu && menu.getEditHand() == hand) {
+            sendFilterBulkSync(player, hand, menu.getServerDraftForSync());
+            return;
+        }
         ItemStack stack = player.getItemInHand(hand);
+        sendFilterBulkSync(player, hand, QuarryFilterModuleData.getEditableDestroyList(stack));
+    }
+
+    public static void sendFilterBulkSync(ServerPlayer player, InteractionHand hand, List<String> lines) {
         PacketDistributor.sendToPlayer(
                 player,
-                new QuarryFilterBulkSyncS2CPayload(hand, QuarryFilterModuleData.getEditableDestroyList(stack)));
+                new QuarryFilterBulkSyncS2CPayload(hand, lines));
     }
 }

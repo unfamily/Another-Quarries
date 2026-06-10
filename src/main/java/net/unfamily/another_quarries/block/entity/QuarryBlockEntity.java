@@ -80,7 +80,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private QuarryDiggingMode diggingMode = QuarryDiggingMode.VOLUME;
     private boolean previousCanWork;
 
-    private final ItemStackHandler bufferHandler;
+    private final QuarryBufferHandler bufferHandler;
     private final ItemStackHandler equipmentHandler;
     private final EnergyStorageImpl energyStorage;
     private final QuarryMiningEngine miningEngine;
@@ -88,15 +88,10 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
 
     public QuarryBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.QUARRY_BE.get(), pos, state);
-        this.bufferHandler = new ItemStackHandler(BUFFER_SLOT_COUNT) {
+        this.bufferHandler = new QuarryBufferHandler(BUFFER_SLOT_COUNT) {
             @Override
             protected void onContentsChanged(int slot) {
                 setChanged();
-            }
-
-            @Override
-            public boolean isItemValid(int slot, ItemStack stack) {
-                return !ModItems.isQuarryEquipment(stack);
             }
         };
         this.equipmentHandler = new ItemStackHandler(QuarryEquipmentSlots.slotCount()) {
@@ -104,6 +99,9 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             protected void onContentsChanged(int slot) {
                 setChanged();
                 refreshEnergyCapacity();
+                if (slot == QuarryEquipmentSlots.filterModuleSlot()) {
+                    QuarryBlockEntity.this.purgeFilteredBufferItems();
+                }
             }
 
             @Override
@@ -342,6 +340,18 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         return QuarryFilterModuleData.getDestroyList(filterStack);
     }
 
+    /** Removes buffer stacks that match the active filter module destroy list. */
+    public void purgeFilteredBufferItems() {
+        if (!isFilterModuleActive() || level == null || level.isClientSide()) {
+            return;
+        }
+        List<String> filters = getActiveItemDenyFilters();
+        if (filters.isEmpty()) {
+            return;
+        }
+        QuarryOutputHandler.purgeFilteredItemsFromBuffer(bufferHandler, filters, level.registryAccess());
+    }
+
     public boolean canWork() {
         if (level == null || level.isClientSide()) {
             return getRedstoneMode() == 0;
@@ -362,6 +372,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         if (!(level instanceof ServerLevel serverLevel)) {
             return;
         }
+        be.purgeFilteredBufferItems();
         boolean canWork = be.canWork();
         if (canWork && !be.previousCanWork) {
             be.miningEngine.onPowerEnabled();

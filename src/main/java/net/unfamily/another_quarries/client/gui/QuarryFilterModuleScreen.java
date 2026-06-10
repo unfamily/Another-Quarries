@@ -1,5 +1,6 @@
 package net.unfamily.another_quarries.client.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Renderable;
 import org.lwjgl.glfw.GLFW;
@@ -62,8 +63,10 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
 
     private Button closeButton;
     private Button filterHelpButton;
+    private Button filterHelpBackButton;
     private Button settingsCopierSaveButton;
     private Button settingsCopierLoadButton;
+    private final QuarryFilterHelpRenderer.Frame filterHelpFrame = new QuarryFilterHelpRenderer.Frame();
 
     public QuarryFilterModuleScreen(QuarryFilterModuleMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
@@ -92,6 +95,11 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         filterHelpButton.visible = false;
         addRenderableWidget(filterHelpButton);
 
+        filterHelpBackButton = Button.builder(Component.translatable("gui.another_quarries.quarry.filter.help.back"), b -> closeFilterHelpSubview())
+                .bounds(0, 0, QuarryFilterGuiLayout.ADVANCED_FILTER_BUTTON_WIDTH, QuarryFilterGuiLayout.BTN_H).build();
+        filterHelpBackButton.visible = false;
+        addRenderableWidget(filterHelpBackButton);
+
         settingsCopierSaveButton = Button.builder(Component.translatable("gui.another_quarries.quarry.filter.copier.copy"), b -> sendFilterCopyToCopier())
                 .bounds(0, 0, 18, QuarryFilterGuiLayout.COPIER_ACTION_BUTTON_H)
                 .tooltip(Tooltip.create(Component.translatable("gui.another_quarries.quarry.filter.copier.copy.tooltip")))
@@ -118,6 +126,7 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
 
         filterEditTextBox = new EditBox(font, 0, 0, 1, 15, Component.empty());
         filterEditTextBox.setMaxLength(256);
+        filterEditTextBox.setEditable(true);
         applyFilterEntryEditBoxTextStyle();
         filterEditTextBox.visible = false;
         addRenderableWidget(filterEditTextBox);
@@ -215,6 +224,10 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         if (subView == SubView.FILTER_HELP) {
+            Component title = Component.translatable("gui.another_quarries.quarry.filter.how_to_use");
+            int titleX = (imageWidth - font.width(title)) / 2;
+            guiGraphics.drawString(font, title, titleX, TITLE_Y, QuarryFilterGuiLayout.FILTER_ENTRY_TEXT_COLOR, false);
+            QuarryFilterHelpRenderer.render(guiGraphics, font, mouseX - leftPos, mouseY - topPos, filterHelpFrame);
             return;
         }
         Component title = Component.translatable("gui.another_quarries.quarry.filter.title");
@@ -223,7 +236,29 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
     }
 
     @Override
+    protected void renderTooltip(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        if (subView == SubView.FILTER_HELP) {
+            QuarryFilterHelpRenderer.renderExampleTooltip(guiGraphics, font, filterHelpFrame, mouseX, mouseY, leftPos, topPos);
+            return;
+        }
+        super.renderTooltip(guiGraphics, mouseX, mouseY);
+        renderFilterEntryIconTooltips(guiGraphics, mouseX, mouseY);
+    }
+
+    @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (subView == SubView.FILTER_HELP) {
+            if (button == 0 && QuarryFilterHelpRenderer.handleExampleClick(
+                    filterHelpFrame, (int) mouseX, (int) mouseY, leftPos, topPos, font.lineHeight, example -> {
+                        if (minecraft != null && minecraft.keyboardHandler != null) {
+                            minecraft.keyboardHandler.setClipboard(example);
+                            playButtonSound();
+                        }
+                    })) {
+                return true;
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
         if (inFilterEditMode() && button == 0) {
             if (mouseX >= filterEditGhostSlotX && mouseX < filterEditGhostSlotX + 18
                     && mouseY >= filterEditGhostSlotY && mouseY < filterEditGhostSlotY + 18) {
@@ -288,11 +323,30 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
                 return true;
             }
         }
-        if (inFilterEditMode() && filterEditTextBox != null && filterEditTextBox.isFocused()
-                && JeiRuntimeState.jeiHasKeyboardFocusOrRecipesGuiOpen()) {
-            return false;
+
+        if (inFilterEditMode() && filterEditTextBox != null) {
+            if (JeiRuntimeState.jeiHasKeyboardFocusOrRecipesGuiOpen()) {
+                return false;
+            }
+            if (QuarryFilterGuiInput.handleFilterEditKeyPressed(
+                    this, keyCode, scanCode, modifiers, filterEditTextBox, this::applyFilterEdit)) {
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                return true;
+            }
         }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (inFilterEditMode() && filterEditTextBox != null
+                && QuarryFilterGuiInput.handleFilterEditCharTyped(filterEditTextBox, codePoint, modifiers)) {
+            return true;
+        }
+        return super.charTyped(codePoint, modifiers);
     }
 
     private void closeButtonAction() {
@@ -346,7 +400,10 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         setVisible(filterEditApplyButton, showEditChrome);
         setVisible(filterEditClearButton, showEditChrome);
         setVisible(filterEditCloseButton, showEditChrome);
+        setVisible(filterHelpBackButton, help);
+        menu.setInventoryInteractionBlocked(help);
         updateCopierPasteButtonState();
+        layoutFilterWidgets();
     }
 
     private void updateCopierPasteButtonState() {
@@ -649,8 +706,19 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
 
     private void layoutFilterWidgets() {
         layoutFilterNavButtons();
+        layoutHelpBackButton();
         layoutFilterEditWidgets();
         layoutCopierButtons();
+    }
+
+    private void layoutHelpBackButton() {
+        if (filterHelpBackButton == null || subView != SubView.FILTER_HELP) {
+            return;
+        }
+        filterHelpBackButton.setX(leftPos + QuarryFilterGuiLayout.HELP_BACK_BUTTON_X);
+        filterHelpBackButton.setY(topPos + QuarryFilterGuiLayout.HELP_BACK_BUTTON_Y);
+        filterHelpBackButton.setWidth(QuarryFilterGuiLayout.ADVANCED_FILTER_BUTTON_WIDTH);
+        filterHelpBackButton.setHeight(QuarryFilterGuiLayout.BTN_H);
     }
 
     private void layoutFilterNavButtons() {
@@ -810,6 +878,52 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             guiGraphics.renderItem(stack, slotX + 1, slotY + 1);
             guiGraphics.renderItemDecorations(font, stack, slotX + 1, slotY + 1);
         }
+    }
+
+    private void renderFilterEntryIconTooltips(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        if (subView != SubView.DESTROY_FILTERS || !menu.getCarried().isEmpty()) {
+            return;
+        }
+        if (inFilterEditMode()) {
+            ItemStack ghostStack = !ghostSlotItem.isEmpty()
+                    ? ghostSlotItem
+                    : QuarryFilterRowDisplay.previewStack(filterEditTextBox != null ? filterEditTextBox.getValue() : "");
+            if (!ghostStack.isEmpty()
+                    && mouseInRect(mouseX, mouseY, filterEditGhostSlotX, filterEditGhostSlotY, 18, 18)) {
+                guiGraphics.renderTooltip(font, ghostStack, mouseX, mouseY);
+                return;
+            }
+        }
+        int maxLines = ModConfig.quarryFilterMaxLines();
+        List<String> lines = menu.getClientDestroyFilters();
+        for (int row = 0; row < QuarryFilterGuiLayout.VISIBLE_FILTER_ENTRIES; row++) {
+            int index = filterScrollOffset + row;
+            if (index >= maxLines) {
+                break;
+            }
+            int entryX = leftPos + QuarryFilterGuiLayout.ENTRY_X;
+            int entryY = topPos + QuarryFilterGuiLayout.FIRST_FILTER_ROW_Y + row * QuarryFilterGuiLayout.ENTRY_HEIGHT;
+            int slotX = entryX + QuarryFilterGuiLayout.ENTRY_SLOT_INSET;
+            int slotY = entryY + QuarryFilterGuiLayout.ENTRY_SLOT_INSET;
+            String filter = index < lines.size() && lines.get(index) != null ? lines.get(index) : "";
+            ItemStack stack = QuarryFilterRowDisplay.previewStack(filter);
+            if (!stack.isEmpty() && mouseInRect(mouseX, mouseY, slotX, slotY, 18, 18)) {
+                guiGraphics.renderTooltip(font, stack, mouseX, mouseY);
+                return;
+            }
+        }
+        if (showsCopierColumn()) {
+            int iconX = leftPos + QuarryFilterGuiLayout.SLOT_COPY_X;
+            int iconY = topPos + QuarryFilterGuiLayout.SLOT_COPY_Y;
+            ItemStack copier = resolveCopierDisplayStack();
+            if (!copier.isEmpty() && mouseInRect(mouseX, mouseY, iconX, iconY, 18, 18)) {
+                guiGraphics.renderTooltip(font, copier, mouseX, mouseY);
+            }
+        }
+    }
+
+    private static boolean mouseInRect(double mouseX, double mouseY, int x, int y, int w, int h) {
+        return mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
     }
 
     private void playButtonSound() {

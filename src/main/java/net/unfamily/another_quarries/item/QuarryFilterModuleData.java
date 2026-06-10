@@ -20,6 +20,28 @@ public final class QuarryFilterModuleData {
         return !stack.isEmpty() && stack.is(ModItems.MODULE_FILTER.get());
     }
 
+    public static List<String> padForEditing(List<String> lines) {
+        List<String> out = new ArrayList<>();
+        if (lines != null) {
+            for (String line : lines) {
+                out.add(line != null ? line : "");
+            }
+        }
+        int max = ModConfig.quarryFilterMaxLines();
+        while (out.size() < max && (out.isEmpty() || !out.getLast().isEmpty())) {
+            out.add("");
+        }
+        return out;
+    }
+
+    public static String draftLine(String raw) {
+        return QuarryItemFilterMatcher.sanitizeLine(raw);
+    }
+
+    public static List<String> compactDestroyList(List<String> lines) {
+        return sanitizeAll(lines);
+    }
+
     public static List<String> getDestroyList(ItemStack stack) {
         if (!isFilterModule(stack)) {
             return List.of();

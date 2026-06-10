@@ -35,7 +35,7 @@ public record QuarryFilterCopyToCopierC2SPacket(InteractionHand hand) implements
                     || menu.getEditHand() != packet.hand()) {
                 return;
             }
-            QuarryFilterCopierCompat.copyToCopier(player, packet.hand()).sendTo(player);
+            QuarryFilterCopierCompat.copyLinesToCopier(player, menu.getCompactServerDraft()).sendTo(player);
         });
     }
 }

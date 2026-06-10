@@ -44,8 +44,8 @@ public record QuarryFilterLineUpdateC2SPacket(InteractionHand hand, int index, S
             if (!QuarryFilterModuleMenu.isValidHandStack(player, packet.hand())) {
                 return;
             }
-            QuarryFilterModuleData.setLineInHand(player, packet.hand(), packet.index(), packet.text());
-            ModNetworking.sendFilterBulkSync(player, packet.hand());
+            menu.setServerDraftLine(packet.index(), packet.text());
+            ModNetworking.sendFilterBulkSync(player, packet.hand(), menu.getServerDraftForSync());
         });
     }
 }
