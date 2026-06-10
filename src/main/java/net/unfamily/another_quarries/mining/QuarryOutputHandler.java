@@ -2,6 +2,7 @@ package net.unfamily.another_quarries.mining;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.ItemStack;
@@ -12,6 +13,8 @@ import net.neoforged.neoforge.transfer.ResourceHandlerUtil;
 import net.neoforged.neoforge.transfer.item.ItemResource;
 import net.neoforged.neoforge.transfer.transaction.Transaction;
 import net.unfamily.iskalib.transfer.LegacyItemHandlerResourceHandler;
+
+import java.util.List;
 
 public final class QuarryOutputHandler {
     private QuarryOutputHandler() {}
@@ -27,6 +30,22 @@ public final class QuarryOutputHandler {
             }
         }
         return false;
+    }
+
+    /** Voids buffer stacks matching the installed filter module destroy list (same rules as {@link QuarryBlockBreaker}). */
+    public static void purgeFilteredItemsFromBuffer(
+            ItemStackHandler buffer,
+            List<String> destroyFilters,
+            HolderLookup.Provider registries) {
+        if (destroyFilters == null || destroyFilters.isEmpty() || registries == null) {
+            return;
+        }
+        for (int slot = 0; slot < buffer.getSlots(); slot++) {
+            ItemStack stack = buffer.getStackInSlot(slot);
+            if (!stack.isEmpty() && QuarryItemFilterMatcher.matchesAny(destroyFilters, stack, registries)) {
+                buffer.setStackInSlot(slot, ItemStack.EMPTY);
+            }
+        }
     }
 
     public static void tryEjectBufferUp(ServerLevel level, BlockPos quarryPos, ItemStackHandler buffer) {

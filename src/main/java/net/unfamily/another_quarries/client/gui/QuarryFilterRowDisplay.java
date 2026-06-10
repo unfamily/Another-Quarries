@@ -9,6 +9,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.unfamily.another_quarries.mining.QuarryItemFilterMatcher;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /** Client preview icon for a single quarry destroy-filter line. */
 public final class QuarryFilterRowDisplay {
     private QuarryFilterRowDisplay() {}
@@ -73,12 +76,17 @@ public final class QuarryFilterRowDisplay {
         if (modPrefix.isEmpty()) {
             return ItemStack.EMPTY;
         }
+        List<Item> modItems = new ArrayList<>();
         for (Item item : BuiltInRegistries.ITEM) {
             Identifier id = BuiltInRegistries.ITEM.getKey(item);
             if (id != null && id.getNamespace().startsWith(modPrefix)) {
-                return new ItemStack(item);
+                modItems.add(item);
             }
         }
-        return ItemStack.EMPTY;
+        if (modItems.isEmpty()) {
+            return ItemStack.EMPTY;
+        }
+        int index = (int) ((System.currentTimeMillis() / 2000L) % modItems.size());
+        return new ItemStack(modItems.get(index));
     }
 }

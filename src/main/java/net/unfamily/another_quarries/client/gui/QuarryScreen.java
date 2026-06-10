@@ -68,7 +68,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private static final int ARROW_GROUP_CENTER_X = ARROW_GROUP_LEFT_X + ARROW_GROUP_WIDTH / 2;
     private static final int PREVIEW_BUTTON_Y = ROW1_Y;
     private static final int SIZE_LABEL_Y = ROW2_Y + BUTTON_H + 2;
-    private static final int CHUNKS_LABEL_Y = QuarryMenu.EQUIPMENT_SLOTS_Y + 18;
+    private static final int CHUNKS_LABEL_Y = QuarryMenu.EQUIPMENT_SLOTS_Y + 18 + 2;
 
     private static final int DIGGING_MODE_X = PREVIEW_BUTTON_X;
     private static final int DIGGING_MODE_Y = ROW2_Y;

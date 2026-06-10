@@ -23,6 +23,8 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
     private final InteractionHand editHand;
     private final List<String> clientDestroyFilters = new ArrayList<>();
     private final ItemStackHandler copierHandler = new ItemStackHandler(1);
+    private List<String> serverDraftLines;
+    private boolean blockInventorySlots;
     private int copySettingsSlotIndex = -1;
     private int playerSlotStart = -1;
     private boolean clientDestroyFiltersDirty;
@@ -38,6 +40,10 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
         addCopierSlotIfNeeded();
         playerSlotStart = slots.size();
         addPlayerInventory(playerInventory);
+        if (!playerInventory.player.level().isClientSide()) {
+            serverDraftLines = new ArrayList<>(
+                    QuarryFilterModuleData.getEditableDestroyList(playerInventory.player.getItemInHand(editHand)));
+        }
     }
 
     public InteractionHand getEditHand() {
@@ -56,6 +62,46 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
         return playerSlotStart;
     }
 
+    public boolean isInventoryInteractionBlocked() {
+        return blockInventorySlots;
+    }
+
+    public void setInventoryInteractionBlocked(boolean blocked) {
+        blockInventorySlots = blocked;
+    }
+
+    private boolean isSlotInteractive() {
+        return !blockInventorySlots;
+    }
+
+    public void setServerDraftLine(int index, String text) {
+        ensureServerDraft();
+        while (serverDraftLines.size() <= index) {
+            serverDraftLines.add("");
+        }
+        serverDraftLines.set(index, QuarryFilterModuleData.draftLine(text));
+    }
+
+    public void replaceServerDraft(List<String> lines) {
+        serverDraftLines = new ArrayList<>(QuarryFilterModuleData.padForEditing(lines));
+    }
+
+    public List<String> getServerDraftForSync() {
+        ensureServerDraft();
+        return QuarryFilterModuleData.padForEditing(serverDraftLines);
+    }
+
+    public List<String> getCompactServerDraft() {
+        ensureServerDraft();
+        return QuarryFilterModuleData.compactDestroyList(serverDraftLines);
+    }
+
+    private void ensureServerDraft() {
+        if (serverDraftLines == null) {
+            serverDraftLines = new ArrayList<>();
+        }
+    }
+
     private void addCopierSlotIfNeeded() {
         if (!AnotherDynamicsIntegration.isLoaded() || copySettingsSlotIndex >= 0) {
             return;
@@ -65,7 +111,17 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
                 QuarryFilterGuiLayout.SLOT_COPY_X, QuarryFilterGuiLayout.SLOT_COPY_Y) {
             @Override
             public boolean mayPlace(ItemStack stack) {
-                return QuarryFilterCopierCompat.isSettingsCopierItem(stack);
+                return isSlotInteractive() && QuarryFilterCopierCompat.isSettingsCopierItem(stack);
+            }
+
+            @Override
+            public boolean isActive() {
+                return isSlotInteractive();
+            }
+
+            @Override
+            public boolean mayPickup(Player player) {
+                return isSlotInteractive() && super.mayPickup(player);
             }
         });
     }
@@ -76,12 +132,32 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
                 int index = col + row * 9 + 9;
-                addSlot(new Slot(playerInventory, index, startX + col * 18, startY + row * 18));
+                addSlot(new Slot(playerInventory, index, startX + col * 18, startY + row * 18) {
+                    @Override
+                    public boolean isActive() {
+                        return isSlotInteractive();
+                    }
+
+                    @Override
+                    public boolean mayPickup(Player player) {
+                        return isSlotInteractive() && super.mayPickup(player);
+                    }
+                });
             }
         }
         int hotbarY = startY + 3 * 18 + QuarryFilterGuiLayout.HOTBAR_GAP;
         for (int col = 0; col < 9; col++) {
-            addSlot(new Slot(playerInventory, col, startX + col * 18, hotbarY));
+            addSlot(new Slot(playerInventory, col, startX + col * 18, hotbarY) {
+                @Override
+                public boolean isActive() {
+                    return isSlotInteractive();
+                }
+
+                @Override
+                public boolean mayPickup(Player player) {
+                    return isSlotInteractive() && super.mayPickup(player);
+                }
+            });
         }
     }
 
@@ -91,7 +167,18 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
     }
 
     @Override
+    public void removed(Player player) {
+        super.removed(player);
+        if (!player.level().isClientSide() && serverDraftLines != null && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            QuarryFilterModuleData.replaceAllInHand(serverPlayer, editHand, serverDraftLines);
+        }
+    }
+
+    @Override
     public ItemStack quickMoveStack(Player player, int index) {
+        if (blockInventorySlots) {
+            return ItemStack.EMPTY;
+        }
         if (playerSlotStart < 0) {
             return ItemStack.EMPTY;
         }

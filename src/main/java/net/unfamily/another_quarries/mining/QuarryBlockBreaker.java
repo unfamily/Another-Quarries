@@ -11,6 +11,7 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.unfamily.another_quarries.block.entity.QuarryBufferHandler;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.unfamily.another_quarries.config.ModConfig;
 
@@ -79,12 +80,8 @@ public final class QuarryBlockBreaker {
     }
 
     private static void insertIntoBuffer(ItemStackHandler buffer, ItemStack stack) {
-        ItemStack remaining = stack.copy();
-        for (int i = 0; i < buffer.getSlots(); i++) {
-            remaining = buffer.insertItem(i, remaining, false);
-            if (remaining.isEmpty()) {
-                return;
-            }
+        if (buffer instanceof QuarryBufferHandler quarryBuffer) {
+            quarryBuffer.insertMinedItem(stack);
         }
     }
 }

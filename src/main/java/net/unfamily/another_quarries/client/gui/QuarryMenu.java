@@ -226,7 +226,12 @@ public class QuarryMenu extends AbstractContainerMenu {
                         BUFFER_SLOTS_Y + row * 18) {
                     @Override
                     public boolean mayPlace(ItemStack stack) {
-                        return !ModItems.isQuarryEquipment(stack);
+                        return false;
+                    }
+
+                    @Override
+                    public boolean mayPickup(Player player) {
+                        return false;
                     }
                 });
             }
@@ -302,8 +307,6 @@ public class QuarryMenu extends AbstractContainerMenu {
                 if (!moveEquipmentFromStack(slotStack)) {
                     return ItemStack.EMPTY;
                 }
-            } else if (!this.moveItemStackTo(slotStack, 0, BUFFER_SLOT_COUNT, false)) {
-                return ItemStack.EMPTY;
             }
             if (slotStack.isEmpty()) {
                 slot.setByPlayer(ItemStack.EMPTY);

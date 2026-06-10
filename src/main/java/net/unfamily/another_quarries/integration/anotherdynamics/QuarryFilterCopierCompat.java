@@ -64,6 +64,13 @@ public final class QuarryFilterCopierCompat {
         if (!QuarryFilterModuleData.isFilterModule(filterModule)) {
             return CopyResult.failure("message.another_quarries.quarry.filter.copier.missing");
         }
+        return copyLinesToCopier(player, QuarryFilterModuleData.getDestroyList(filterModule));
+    }
+
+    public static CopyResult copyLinesToCopier(ServerPlayer player, List<String> lines) {
+        if (!AnotherDynamicsIntegration.isLoaded()) {
+            return CopyResult.failure("message.another_quarries.quarry.filter.copier.ad_missing");
+        }
         ItemStack copier = findSettingsCopier(player);
         if (copier == null) {
             return CopyResult.failure("message.another_quarries.quarry.filter.copier.missing");
@@ -72,7 +79,6 @@ public final class QuarryFilterCopierCompat {
         if (settingsType == null) {
             return CopyResult.failure("message.another_quarries.quarry.filter.copier.ad_missing");
         }
-        List<String> lines = QuarryFilterModuleData.getDestroyList(filterModule);
         CompoundTag snapshot = buildFilterListSnapshot(lines);
         copier.set(settingsType, snapshot);
         DataComponentType<Boolean> filterFlag = copierFilterModeComponentType();
@@ -83,11 +89,20 @@ public final class QuarryFilterCopierCompat {
     }
 
     public static PasteResult pasteFromCopier(ServerPlayer player, InteractionHand hand) {
-        if (!AnotherDynamicsIntegration.isLoaded()) {
-            return PasteResult.failure("message.another_quarries.quarry.filter.copier.ad_missing");
-        }
         if (!QuarryFilterModuleData.isFilterModule(player.getItemInHand(hand))) {
             return PasteResult.failure("message.another_quarries.quarry.filter.copier.missing");
+        }
+        PasteResult read = readFilterLinesFromCopier(player);
+        if (!read.success()) {
+            return read;
+        }
+        QuarryFilterModuleData.replaceAllInHand(player, hand, read.lines());
+        return read;
+    }
+
+    public static PasteResult readFilterLinesFromCopier(ServerPlayer player) {
+        if (!AnotherDynamicsIntegration.isLoaded()) {
+            return PasteResult.failure("message.another_quarries.quarry.filter.copier.ad_missing");
         }
         ItemStack copier = findSettingsCopier(player);
         if (copier == null) {
@@ -105,8 +120,7 @@ public final class QuarryFilterCopierCompat {
             return PasteResult.failure("message.another_quarries.quarry.filter.copier.not_filter");
         }
         List<String> imported = readLines(snapshot);
-        QuarryFilterModuleData.replaceAllInHand(player, hand, imported);
-        return PasteResult.success("message.another_quarries.quarry.filter.copier.pasted", imported.size());
+        return PasteResult.success("message.another_quarries.quarry.filter.copier.pasted", imported.size(), imported);
     }
 
     /** First Settings Copier found in hands or inventory (client display fallback). */
@@ -239,13 +253,13 @@ public final class QuarryFilterCopierCompat {
         }
     }
 
-    public record PasteResult(boolean success, String messageKey, int lineCount) {
-        public static PasteResult success(String key, int lines) {
-            return new PasteResult(true, key, lines);
+    public record PasteResult(boolean success, String messageKey, int lineCount, List<String> lines) {
+        public static PasteResult success(String key, int lines, List<String> imported) {
+            return new PasteResult(true, key, lines, List.copyOf(imported));
         }
 
         public static PasteResult failure(String key) {
-            return new PasteResult(false, key, 0);
+            return new PasteResult(false, key, 0, List.of());
         }
 
         public void sendTo(ServerPlayer player) {

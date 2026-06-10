@@ -27,7 +27,6 @@ public final class QuarryFilterVariants {
             return variants;
         }
         variants.add("-" + itemId);
-        variants.add(itemId.toString());
         variants.add("@" + itemId.getNamespace());
         Item item = stack.getItem();
         Holder<Item> holder = BuiltInRegistries.ITEM.wrapAsHolder(item);
