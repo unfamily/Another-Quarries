@@ -514,12 +514,14 @@ public final class QuarryMiningEngine {
                 drill,
                 QuarryEquipmentSlots.diggerModuleCount(equipment),
                 QuarryEquipmentSlots.speedModuleCount(equipment),
-                QuarryEquipmentSlots.fortuneLevel(equipment),
-                QuarryEquipmentSlots.hasSilkTouch(equipment),
+                QuarryEquipmentSlots.fortuneLevel(equipment, level.registryAccess()),
+                QuarryEquipmentSlots.hasSilkTouch(equipment, level.registryAccess()),
                 rfPerBlock,
                 facing,
                 quarry.getDiggingMode(),
-                ItemStack.EMPTY);
+                ItemStack.EMPTY,
+                quarry.isFilterModuleActive(),
+                quarry.getActiveItemDenyFilters());
         ItemStack breakTool = QuarryBlockBreaker.buildBreakTool(base, level);
         return new QuarryWorkContext(
                 base.drill(),
@@ -530,7 +532,9 @@ public final class QuarryMiningEngine {
                 base.rfPerBlock(),
                 base.facing(),
                 base.diggingMode(),
-                breakTool);
+                breakTool,
+                base.voidFilteredDrops(),
+                base.itemDenyFilters());
     }
 
     private void ensureQueue(Level level) {

@@ -2,6 +2,7 @@ package net.unfamily.another_quarries.client.gui;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -20,6 +21,8 @@ import net.unfamily.another_quarries.registry.ModBlocks;
 import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.registry.ModMenuTypes;
 import net.unfamily.another_quarries.util.QuarryAreaLogic;
+
+import java.util.List;
 
 public class QuarryMenu extends AbstractContainerMenu {
     public static final int GUI_WIDTH = 176;
@@ -77,6 +80,13 @@ public class QuarryMenu extends AbstractContainerMenu {
         return equipmentMenuIndex(QuarryEquipmentSlots.enchantModuleSlot());
     }
 
+    public static int filterModuleMenuIndex() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.filterModuleSlot());
+    }
+
+    /** @deprecated use {@link #filterModuleMenuIndex()} */
+    @Deprecated
+    public static final int FILTER_SLOT_INDEX = filterModuleMenuIndex();
     /** @deprecated use {@link #firstDroneMenuIndex()} */
     @Deprecated
     public static final int DRONE_SLOT_INDEX = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.firstDroneSlot();
@@ -92,16 +102,13 @@ public class QuarryMenu extends AbstractContainerMenu {
     /** @deprecated use {@link #enchantModuleMenuIndex()} */
     @Deprecated
     public static final int ENCHANT_MODULE_SLOT_INDEX = BUFFER_SLOT_COUNT + 4;
-    /** @deprecated unused reserved GUI column */
-    @Deprecated
-    public static final int FILTER_SLOT_INDEX = BUFFER_SLOT_COUNT + 5;
     /** @deprecated use {@link #diggerModuleMenuIndex()} */
     @Deprecated
     public static final int MODULE_SLOT_START = DIGGER_MODULE_SLOT_INDEX;
     /** @deprecated */
     @Deprecated
     public static final int MODULE_SLOT_COUNT = 3;
-    public static final int PLAYER_SLOT_START = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.guiColumnCount();
+    public static final int PLAYER_SLOT_START = BUFFER_SLOT_COUNT + QuarryEquipmentSlots.slotCount();
 
     private static final int ENERGY_INDEX = 0;
     private static final int MAX_ENERGY_INDEX = 1;
@@ -125,6 +132,8 @@ public class QuarryMenu extends AbstractContainerMenu {
     private final ContainerLevelAccess levelAccess;
     private final BlockPos blockPos;
     private final ContainerData containerData;
+    private BlockPos clientMenuPos = BlockPos.ZERO;
+    private ContainerLevelAccess clientLevelAccess = ContainerLevelAccess.NULL;
 
     public QuarryMenu(int containerId, Inventory playerInventory, QuarryBlockEntity blockEntity) {
         super(ModMenuTypes.QUARRY_MENU.get(), containerId);
@@ -152,6 +161,17 @@ public class QuarryMenu extends AbstractContainerMenu {
         addEquipmentSlots(equipment);
         addPlayerInventory(playerInventory);
         addPlayerHotbar(playerInventory);
+    }
+
+    /** Client factory: extra payload is quarry {@code BlockPos}. */
+    public static QuarryMenu createClient(int containerId, Inventory playerInventory, FriendlyByteBuf extra) {
+        BlockPos pos = extra.readBlockPos();
+        QuarryMenu menu = new QuarryMenu(containerId, playerInventory);
+        menu.clientMenuPos = pos;
+        if (playerInventory.player.level() != null) {
+            menu.clientLevelAccess = ContainerLevelAccess.create(playerInventory.player.level(), pos);
+        }
+        return menu;
     }
 
     private static ContainerData createContainerData(QuarryBlockEntity be) {
@@ -253,7 +273,13 @@ public class QuarryMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return stillValid(levelAccess, player, ModBlocks.QUARRY.get());
+        if (blockEntity != null) {
+            return stillValid(levelAccess, player, ModBlocks.QUARRY.get());
+        }
+        if (!clientMenuPos.equals(BlockPos.ZERO)) {
+            return stillValid(clientLevelAccess, player, ModBlocks.QUARRY.get());
+        }
+        return true;
     }
 
     @Override
@@ -305,8 +331,13 @@ public class QuarryMenu extends AbstractContainerMenu {
         if (stack.is(ModItems.MODULE_SPEED.get())) {
             return moveToEquipment(stack, speedModuleMenuIndex(), speedModuleMenuIndex() + 1);
         }
-        if (stack.is(ModItems.MODULE_FORTUNE.get()) || stack.is(ModItems.MODULE_SILK_TOUCH.get())) {
+        if (stack.is(ModItems.MODULE_FORTUNE.get())
+                || stack.is(ModItems.MODULE_SILK_TOUCH.get())
+                || stack.is(ModItems.MODULE_ENCHANT.get())) {
             return moveToEquipment(stack, enchantModuleMenuIndex(), enchantModuleMenuIndex() + 1);
+        }
+        if (stack.is(ModItems.MODULE_FILTER.get())) {
+            return moveToEquipment(stack, filterModuleMenuIndex(), filterModuleMenuIndex() + 1);
         }
         return false;
     }
@@ -384,6 +415,9 @@ public class QuarryMenu extends AbstractContainerMenu {
     public BlockPos getSyncedBlockPos() {
         if (this.blockEntity != null) {
             return this.blockPos;
+        }
+        if (!clientMenuPos.equals(BlockPos.ZERO)) {
+            return clientMenuPos;
         }
         int x = this.containerData.get(BLOCK_POS_X_INDEX);
         int y = this.containerData.get(BLOCK_POS_Y_INDEX);

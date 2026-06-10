@@ -133,7 +133,7 @@ public final class ModConfig {
             .defineInRange("structureQuarryCascadeMaxBlocks", 4096, 1, 65536);
 
     private static final ModConfigSpec.IntValue EQUIPMENT_GUI_COLUMNS = BUILDER
-            .comment("Equipment row width in the quarry GUI background (drone + drill + 3 upgrade slots must fit)")
+            .comment("Equipment row width in the quarry GUI background (drone + drill + 4 upgrade slots must fit)")
             .defineInRange("008_equipmentGuiColumns", 9, 5, 9);
 
     private static final ModConfigSpec.IntValue EQUIPMENT_DRONE_SLOTS = BUILDER
@@ -205,6 +205,15 @@ public final class ModConfig {
     private static final ModConfigSpec.IntValue MODULE_DIGGER_MAX_COUNT = moduleMaxCount("module_digger", 16);
     private static final ModConfigSpec.IntValue MODULE_SILK_TOUCH_MAX_COUNT = moduleMaxCount("module_silktouch", 1);
     private static final ModConfigSpec.IntValue MODULE_FORTUNE_MAX_COUNT = moduleMaxCount("module_fortune", 3);
+    private static final ModConfigSpec.IntValue MODULE_FILTER_EXTRA_RF = moduleExtraRf("module_filter", 2);
+    private static final ModConfigSpec.IntValue MODULE_FILTER_MAX_COUNT = moduleMaxCount("module_filter", 1);
+    private static final ModConfigSpec.IntValue MODULE_ENCHANT_ENCHANTABILITY = BUILDER
+            .comment("Enchantability value for the enchantable quarry module (anvil / enchanting table)")
+            .defineInRange("module_enchant_enchantability", 15, 1, 64);
+
+    private static final ModConfigSpec.IntValue QUARRY_FILTER_MAX_LINES = BUILDER
+            .comment("Maximum deny-list lines stored on a quarry with a filter module installed")
+            .defineInRange("quarryFilterMaxLines", 50, 1, 50);
 
     private static final ModConfigSpec.DoubleValue SPEED_TICK_MULTIPLIER = BUILDER
             .comment("Speed multiplier per speed module (1.0 = no change; 1.1 = 10% faster per module)")
@@ -386,7 +395,7 @@ public final class ModConfig {
 
     public static int equipmentDroneSlots() {
         int drones = EQUIPMENT_DRONE_SLOTS.get();
-        int maxDrones = equipmentGuiColumns() - equipmentDrillSlots() - 3;
+        int maxDrones = equipmentGuiColumns() - equipmentDrillSlots() - 4;
         return Math.min(drones, Math.max(1, maxDrones));
     }
 
@@ -484,6 +493,18 @@ public final class ModConfig {
         return MODULE_SILK_TOUCH_MAX_COUNT.get();
     }
 
+    public static int maxFilterModules() {
+        return MODULE_FILTER_MAX_COUNT.get();
+    }
+
+    public static int quarryFilterMaxLines() {
+        return QUARRY_FILTER_MAX_LINES.get();
+    }
+
+    public static int moduleEnchantability() {
+        return MODULE_ENCHANT_ENCHANTABILITY.get();
+    }
+
     public static float speedFactor(int speedModules) {
         return (float) Math.pow(SPEED_TICK_MULTIPLIER.get(), speedModules);
     }
@@ -499,7 +520,20 @@ public final class ModConfig {
             case DIGGER -> MODULE_DIGGER_EXTRA_RF.get();
             case SILK_TOUCH -> MODULE_SILK_TOUCH_EXTRA_RF.get();
             case FORTUNE -> MODULE_FORTUNE_EXTRA_RF.get();
+            case FILTER -> MODULE_FILTER_EXTRA_RF.get();
+            case ENCHANT -> 0;
         };
+    }
+
+    public static int extraRfForEnchantModule(int fortuneLevel, boolean silkTouch) {
+        int total = 0;
+        if (fortuneLevel > 0) {
+            total += fortuneLevel * extraRfFor(QuarryModules.FORTUNE);
+        }
+        if (silkTouch) {
+            total += extraRfFor(QuarryModules.SILK_TOUCH);
+        }
+        return total;
     }
 
     public static int maxCountFor(QuarryModules module) {
@@ -509,6 +543,8 @@ public final class ModConfig {
             case DIGGER -> MODULE_DIGGER_MAX_COUNT.get();
             case SILK_TOUCH -> MODULE_SILK_TOUCH_MAX_COUNT.get();
             case FORTUNE -> MODULE_FORTUNE_MAX_COUNT.get();
+            case FILTER -> MODULE_FILTER_MAX_COUNT.get();
+            case ENCHANT -> 1;
         };
     }
 
@@ -521,6 +557,17 @@ public final class ModConfig {
     }
 
     public static int moduleRfComponent(int diggerCount, int speedCount, int fortuneCount, boolean silkTouch) {
+        return moduleRfComponent(diggerCount, speedCount, fortuneCount, silkTouch, false, 0, false);
+    }
+
+    public static int moduleRfComponent(
+            int diggerCount,
+            int speedCount,
+            int fortuneCount,
+            boolean silkTouch,
+            boolean filterModule,
+            int enchantModuleFortune,
+            boolean enchantModuleSilk) {
         int total = 0;
         total += diggerCount * extraRfFor(QuarryModules.DIGGER);
         total += speedCount * extraRfFor(QuarryModules.SPEED);
@@ -528,6 +575,10 @@ public final class ModConfig {
         if (silkTouch) {
             total += extraRfFor(QuarryModules.SILK_TOUCH);
         }
+        if (filterModule) {
+            total += extraRfFor(QuarryModules.FILTER);
+        }
+        total += extraRfForEnchantModule(enchantModuleFortune, enchantModuleSilk);
         return total;
     }
 
@@ -537,6 +588,27 @@ public final class ModConfig {
             int fortuneCount,
             boolean silkTouch,
             net.unfamily.another_quarries.mining.QuarryDrillType drill) {
-        return baseRfPerBlock() + moduleRfComponent(diggerCount, speedCount, fortuneCount, silkTouch) + extraRfForDrill(drill);
+        return totalRfPerBlock(diggerCount, speedCount, fortuneCount, silkTouch, false, 0, false, drill);
+    }
+
+    public static int totalRfPerBlock(
+            int diggerCount,
+            int speedCount,
+            int fortuneCount,
+            boolean silkTouch,
+            boolean filterModule,
+            int enchantModuleFortune,
+            boolean enchantModuleSilk,
+            net.unfamily.another_quarries.mining.QuarryDrillType drill) {
+        return baseRfPerBlock()
+                + moduleRfComponent(
+                        diggerCount,
+                        speedCount,
+                        fortuneCount,
+                        silkTouch,
+                        filterModule,
+                        enchantModuleFortune,
+                        enchantModuleSilk)
+                + extraRfForDrill(drill);
     }
 }

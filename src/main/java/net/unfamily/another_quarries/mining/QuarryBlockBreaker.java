@@ -50,7 +50,12 @@ public final class QuarryBlockBreaker {
         if (!level.removeBlock(pos, false)) {
             return false;
         }
+        var registries = level.registryAccess();
         for (ItemStack drop : drops) {
+            if (ctx.voidFilteredDrops()
+                    && QuarryItemFilterMatcher.matchesAny(ctx.itemDenyFilters(), drop, registries)) {
+                continue;
+            }
             insertIntoBuffer(buffer, drop);
         }
         return true;

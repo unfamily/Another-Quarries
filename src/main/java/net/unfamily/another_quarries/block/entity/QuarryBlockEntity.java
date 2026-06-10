@@ -9,6 +9,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Containers;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
@@ -25,6 +26,7 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import net.unfamily.another_quarries.client.gui.QuarryMenu;
 import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
+import net.unfamily.another_quarries.item.QuarryFilterModuleData;
 import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.mining.QuarryChunkTickets;
 import net.unfamily.another_quarries.mining.QuarryDrillAssigner;
@@ -39,6 +41,8 @@ import net.unfamily.another_quarries.util.QuarryRedstoneUtil;
 import org.jetbrains.annotations.Nullable;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+
+import java.util.List;
 
 public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     public static final int BUFFER_SLOT_COUNT = 27;
@@ -317,6 +321,25 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
                 QuarryEquipmentSlots.fortuneLevel(equipmentHandler),
                 QuarryEquipmentSlots.hasSilkTouch(equipmentHandler),
                 QuarryDrillAssigner.resolveDrill(equipmentHandler));
+    }
+
+    public void openMenu(Player player) {
+        if (!(player instanceof ServerPlayer serverPlayer)) {
+            return;
+        }
+        serverPlayer.openMenu(this, buf -> buf.writeBlockPos(getBlockPos()));
+    }
+
+    public boolean isFilterModuleActive() {
+        return QuarryEquipmentSlots.hasFilterModule(equipmentHandler);
+    }
+
+    public List<String> getActiveItemDenyFilters() {
+        if (!isFilterModuleActive()) {
+            return List.of();
+        }
+        ItemStack filterStack = equipmentHandler.getStackInSlot(QuarryEquipmentSlots.filterModuleSlot());
+        return QuarryFilterModuleData.getDestroyList(filterStack);
     }
 
     public boolean canWork() {

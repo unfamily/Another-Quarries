@@ -11,6 +11,7 @@ import net.unfamily.another_quarries.registry.ModBlockEntities;
 import net.unfamily.another_quarries.registry.ModBlocks;
 import net.unfamily.another_quarries.registry.ModCreativeModeTabs;
 import net.unfamily.another_quarries.registry.ModItems;
+import net.unfamily.another_quarries.registry.ModDataComponents;
 import net.unfamily.another_quarries.registry.ModMenuTypes;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.NeoForge;
@@ -32,6 +33,7 @@ public final class AnotherQuarries {
         ModItems.register(modEventBus);
         ModBlockEntities.register(modEventBus);
         ModMenuTypes.register(modEventBus);
+        ModDataComponents.register(modEventBus);
         ModCreativeModeTabs.register(modEventBus);
         NeoForge.EVENT_BUS.addListener(AnotherQuarries::onLevelTickPost);
     }

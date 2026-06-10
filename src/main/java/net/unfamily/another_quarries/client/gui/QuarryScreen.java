@@ -468,6 +468,9 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (equipmentSlot == QuarryEquipmentSlots.speedModuleSlot()) {
             return GHOST_SPEED;
         }
+        if (equipmentSlot == QuarryEquipmentSlots.filterModuleSlot()) {
+            return new ItemStack(ModItems.MODULE_FILTER.get());
+        }
         return ItemStack.EMPTY;
     }
 

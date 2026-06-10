@@ -14,7 +14,9 @@ public enum QuarryModules {
     SPEED(() -> ModItems.MODULE_SPEED.get(), "module_speed"),
     DIGGER(() -> ModItems.MODULE_DIGGER.get(), "module_digger"),
     SILK_TOUCH(() -> ModItems.MODULE_SILK_TOUCH.get(), "module_silktouch"),
-    FORTUNE(() -> ModItems.MODULE_FORTUNE.get(), "module_fortune");
+    FORTUNE(() -> ModItems.MODULE_FORTUNE.get(), "module_fortune"),
+    FILTER(() -> ModItems.MODULE_FILTER.get(), "module_filter"),
+    ENCHANT(() -> ModItems.MODULE_ENCHANT.get(), "module_enchant");
 
     private final DeferredItemRef itemRef;
     private final String configKey;
@@ -67,7 +69,8 @@ public enum QuarryModules {
     public static List<ItemStack> enchantGhostStacks() {
         return List.of(
                 new ItemStack(ModItems.MODULE_FORTUNE.get()),
-                new ItemStack(ModItems.MODULE_SILK_TOUCH.get()));
+                new ItemStack(ModItems.MODULE_SILK_TOUCH.get()),
+                new ItemStack(ModItems.MODULE_ENCHANT.get()));
     }
 
     public static List<ItemStack> ghostCycleStacks() {

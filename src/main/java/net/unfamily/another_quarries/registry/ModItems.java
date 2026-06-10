@@ -9,6 +9,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.item.DescribedBlockItem;
 import net.unfamily.another_quarries.item.DescribedItem;
+import net.unfamily.another_quarries.item.EnchantableQuarryModuleItem;
+import net.unfamily.another_quarries.item.QuarryFilterModuleItem;
 import net.unfamily.another_quarries.item.QuarryModules;
 
 public final class ModItems {
@@ -40,6 +42,15 @@ public final class ModItems {
             () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.module_silktouch.desc"));
     public static final DeferredItem<Item> MODULE_FORTUNE = ITEMS.register("module_fortune",
             () -> new DescribedItem(ITEM_PROPERTIES, "tooltip.another_quarries.module_fortune.desc"));
+    public static final DeferredItem<Item> MODULE_FILTER = ITEMS.register("module_filter",
+            () -> new QuarryFilterModuleItem(
+                    ITEM_PROPERTIES,
+                    "tooltip.another_quarries.module_filter.desc0",
+                    "tooltip.another_quarries.module_filter.desc1"));
+    public static final DeferredItem<Item> MODULE_ENCHANT = ITEMS.register("module_enchant",
+            () -> new EnchantableQuarryModuleItem(
+                    new Item.Properties().stacksTo(1),
+                    "tooltip.another_quarries.module_enchant.desc"));
     public static final DeferredItem<Item> ARTIFICIAL_EYE =
             ITEMS.register("artificial_eye", () -> new Item(ITEM_PROPERTIES));
 

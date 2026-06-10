@@ -22,6 +22,12 @@ repositories {
     maven {
         url = "https://www.cursemaven.com"
     }
+    maven {
+        url = "https://maven.blamejared.com"
+        content {
+            includeGroup('mezz.jei')
+        }
+    }
 }
 
 base {
@@ -80,6 +86,9 @@ configurations {
 dependencies {
     implementation "curse.maven:iskanderts-library-1516512:8195543"
     localRuntime "curse.maven:iskanderts-library-1516512:8195543"
+
+    compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
+    localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {

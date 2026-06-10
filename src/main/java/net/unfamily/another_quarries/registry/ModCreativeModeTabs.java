@@ -28,6 +28,8 @@ public final class ModCreativeModeTabs {
                         output.accept(ModItems.MODULE_DIGGER.get());
                         output.accept(ModItems.MODULE_SILK_TOUCH.get());
                         output.accept(ModItems.MODULE_FORTUNE.get());
+                        output.accept(ModItems.MODULE_FILTER.get());
+                        output.accept(ModItems.MODULE_ENCHANT.get());
                     })
                     .build());
 

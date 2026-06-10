@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " L ",
+    "ABA",
+    " L "
+  ],
+  "key": {
+    "L": {
+      "item": "minecraft:lapis_lazuli"
+    },
+    "A": {
+      "item": "minecraft:book"
+    },
+    "B": {
+      "item": "another_quarries:module_base"
+    }
+  },
+  "result": {
+    "id": "another_quarries:module_enchant",
+    "count": 1
+  }
+}

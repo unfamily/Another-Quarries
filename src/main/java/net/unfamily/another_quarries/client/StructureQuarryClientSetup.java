@@ -8,6 +8,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.unfamily.another_quarries.AnotherQuarries;
+import net.unfamily.another_quarries.client.gui.QuarryFilterModuleScreen;
 import net.unfamily.another_quarries.client.gui.QuarryScreen;
 import net.unfamily.another_quarries.client.structure.StructureQuarryGeometryLoader;
 import net.unfamily.another_quarries.registry.ModMenuTypes;
@@ -19,6 +20,7 @@ public final class StructureQuarryClientSetup {
     @SubscribeEvent
     public static void onRegisterMenuScreens(RegisterMenuScreensEvent event) {
         event.register(ModMenuTypes.QUARRY_MENU.get(), QuarryScreen::new);
+        event.register(ModMenuTypes.QUARRY_FILTER_MODULE_MENU.get(), QuarryFilterModuleScreen::new);
     }
 
     @SubscribeEvent
