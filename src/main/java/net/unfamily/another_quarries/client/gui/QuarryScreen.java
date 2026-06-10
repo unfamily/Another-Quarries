@@ -67,6 +67,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private static final int ARROW_GROUP_CENTER_X = ARROW_GROUP_LEFT_X + ARROW_GROUP_WIDTH / 2;
     private static final int PREVIEW_BUTTON_Y = ROW1_Y;
     private static final int SIZE_LABEL_Y = ROW2_Y + BUTTON_H + 2;
+    private static final int CHUNKS_LABEL_Y = QuarryMenu.EQUIPMENT_SLOTS_Y + 18;
 
     private static final int DIGGING_MODE_X = PREVIEW_BUTTON_X;
     private static final int DIGGING_MODE_Y = ROW2_Y;
@@ -328,7 +329,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         super.extractRenderState(guiGraphics, mouseX, mouseY, partialTick);
         renderEnergyBar(guiGraphics);
         renderAreaLabel(guiGraphics);
-        renderButtonTooltips(guiGraphics, mouseX, mouseY);
+        renderChunksProgressLabel(guiGraphics);
     }
 
     @Override
@@ -348,6 +349,19 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
                 menu.getAreaHeight(),
                 menu.getAreaDepth());
         drawCenteredText(guiGraphics, sizeLabel, labelCenterX, this.topPos + SIZE_LABEL_Y, GuiTextColors.TITLE);
+    }
+
+    private void renderChunksProgressLabel(GuiGraphicsExtractor guiGraphics) {
+        int total = menu.getTotalAreaChunkCount();
+        if (total <= 1) {
+            return;
+        }
+        int centerX = this.leftPos + this.imageWidth / 2;
+        Component label = Component.translatable(
+                "gui.another_quarries.quarry.chunks_progress",
+                menu.getProcessedAreaChunkCount(),
+                total);
+        drawCenteredText(guiGraphics, label, centerX, this.topPos + CHUNKS_LABEL_Y, GuiTextColors.TITLE);
     }
 
     private void renderGhostItems(GuiGraphicsExtractor guiGraphics) {
@@ -380,13 +394,6 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         }
     }
 
-    private void renderButtonTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
-        if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
-            MachineGuiButtons.renderTooltipLine(guiGraphics, font, mouseX, mouseY,
-                    MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), false));
-        }
-    }
-
     @Override
     public void extractTooltip(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
         super.extractTooltip(guiGraphics, mouseX, mouseY);
@@ -415,22 +422,25 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
                     true);
         }
         renderGhostTooltips(guiGraphics, mouseX, mouseY);
+        if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
+            MachineGuiButtons.renderTooltipLine(guiGraphics, font, mouseX, mouseY,
+                    MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), false));
+        }
     }
 
     private void renderGhostTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
+        if (!this.menu.getCarried().isEmpty()) {
+            return;
+        }
         for (int equipmentSlot = 0; equipmentSlot < QuarryEquipmentSlots.slotCount(); equipmentSlot++) {
             Slot slot = menu.getSlot(QuarryMenu.equipmentMenuIndex(equipmentSlot));
-            if (slot != null && slot.getItem().isEmpty() && isMouseOverSlot(slot, mouseX, mouseY)) {
-                ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
-                if (!ghost.isEmpty()) {
-                    guiGraphics.setTooltipForNextFrame(
-                            this.font,
-                            List.of(ghost.getHoverName().getVisualOrderText()),
-                            DefaultTooltipPositioner.INSTANCE,
-                            mouseX,
-                            mouseY,
-                            true);
-                }
+            if (slot == null || !slot.getItem().isEmpty() || !isMouseOverSlot(slot, mouseX, mouseY)) {
+                continue;
+            }
+            ItemStack ghost = ghostForEquipmentSlot(equipmentSlot);
+            if (!ghost.isEmpty()) {
+                guiGraphics.setTooltipForNextFrame(this.font, ghost, mouseX, mouseY);
+                return;
             }
         }
     }

@@ -8,6 +8,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
+import net.unfamily.another_quarries.block.structure.StructureQuarryBreakCascade;
 import net.unfamily.another_quarries.block.structure.StructureQuarryBlock;
 import net.unfamily.another_quarries.block.structure.StructureQuarryVisualRefresh;
 import net.unfamily.another_quarries.config.ModConfig;
@@ -251,12 +252,14 @@ public final class QuarryFrameController {
         if (!current.is(ModBlocks.STRUCTURE_QUARRY.get())) {
             return false;
         }
-        if (!level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), net.minecraft.world.level.block.Block.UPDATE_ALL)) {
-            return false;
-        }
-        StructureQuarryBlock.updateConnectionsAround(level, pos);
-        StructureQuarryVisualRefresh.refreshAround(level, pos);
-        return true;
+        StructureQuarryBreakCascade.runWithoutCascade(() -> {
+            if (!level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), net.minecraft.world.level.block.Block.UPDATE_ALL)) {
+                return;
+            }
+            StructureQuarryBlock.updateConnectionsAround(level, pos);
+            StructureQuarryVisualRefresh.refreshAround(level, pos);
+        });
+        return level.getBlockState(pos).isAir();
     }
 
     public boolean placeFrameBlock(ServerLevel level, BlockPos pos) {

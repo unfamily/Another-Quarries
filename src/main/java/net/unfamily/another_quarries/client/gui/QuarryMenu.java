@@ -117,7 +117,9 @@ public class QuarryMenu extends AbstractContainerMenu {
     private static final int BLOCK_POS_X_INDEX = 11;
     private static final int BLOCK_POS_Y_INDEX = 12;
     private static final int BLOCK_POS_Z_INDEX = 13;
-    private static final int DATA_COUNT = 14;
+    private static final int PROCESSED_CHUNKS_INDEX = 14;
+    private static final int TOTAL_CHUNKS_INDEX = 15;
+    private static final int DATA_COUNT = 16;
 
     private final QuarryBlockEntity blockEntity;
     private final ContainerLevelAccess levelAccess;
@@ -179,6 +181,8 @@ public class QuarryMenu extends AbstractContainerMenu {
                     case BLOCK_POS_X_INDEX -> be.getBlockPos().getX();
                     case BLOCK_POS_Y_INDEX -> be.getBlockPos().getY();
                     case BLOCK_POS_Z_INDEX -> be.getBlockPos().getZ();
+                    case PROCESSED_CHUNKS_INDEX -> be.getProcessedAreaChunkCount();
+                    case TOTAL_CHUNKS_INDEX -> be.getTotalAreaChunkCount();
                     default -> 0;
                 };
             }
@@ -199,7 +203,12 @@ public class QuarryMenu extends AbstractContainerMenu {
                 int slotIndex = col + row * 9;
                 addSlot(new SlotItemHandler(handler, slotIndex,
                         BUFFER_SLOTS_X + col * 18,
-                        BUFFER_SLOTS_Y + row * 18));
+                        BUFFER_SLOTS_Y + row * 18) {
+                    @Override
+                    public boolean mayPlace(ItemStack stack) {
+                        return !ModItems.isQuarryEquipment(stack);
+                    }
+                });
             }
         }
     }
@@ -255,30 +264,19 @@ public class QuarryMenu extends AbstractContainerMenu {
             ItemStack slotStack = slot.getItem();
             itemstack = slotStack.copy();
             if (index < PLAYER_SLOT_START) {
-                if (!this.moveItemStackTo(slotStack, PLAYER_SLOT_START, 64, false)) {
+                if (index < BUFFER_SLOT_COUNT && ModItems.isQuarryEquipment(slotStack)) {
+                    if (!moveEquipmentFromStack(slotStack)
+                            && !this.moveItemStackTo(slotStack, PLAYER_SLOT_START, 64, false)) {
+                        return ItemStack.EMPTY;
+                    }
+                } else if (!this.moveItemStackTo(slotStack, PLAYER_SLOT_START, 64, false)) {
                     return ItemStack.EMPTY;
                 }
-            } else if (ModItems.isDrone(slotStack)) {
-                if (!moveToEquipment(slotStack, firstDroneMenuIndex(), droneMenuIndexEnd())) {
+            } else if (ModItems.isQuarryEquipment(slotStack)) {
+                if (!moveEquipmentFromStack(slotStack)) {
                     return ItemStack.EMPTY;
                 }
-            } else if (ModItems.isAnyDrill(slotStack)) {
-                if (!moveToEquipment(slotStack, firstDrillMenuIndex(), drillMenuIndexEnd())) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (slotStack.is(ModItems.MODULE_DIGGER.get())) {
-                if (!moveToEquipment(slotStack, diggerModuleMenuIndex(), diggerModuleMenuIndex() + 1)) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (slotStack.is(ModItems.MODULE_SPEED.get())) {
-                if (!moveToEquipment(slotStack, speedModuleMenuIndex(), speedModuleMenuIndex() + 1)) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (slotStack.is(ModItems.MODULE_FORTUNE.get()) || slotStack.is(ModItems.MODULE_SILK_TOUCH.get())) {
-                if (!moveToEquipment(slotStack, enchantModuleMenuIndex(), enchantModuleMenuIndex() + 1)) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (!this.moveItemStackTo(slotStack, 0, PLAYER_SLOT_START, false)) {
+            } else if (!this.moveItemStackTo(slotStack, 0, BUFFER_SLOT_COUNT, false)) {
                 return ItemStack.EMPTY;
             }
             if (slotStack.isEmpty()) {
@@ -291,8 +289,26 @@ public class QuarryMenu extends AbstractContainerMenu {
     }
 
     private boolean moveToEquipment(ItemStack stack, int start, int end) {
-        return this.moveItemStackTo(stack, start, end, false)
-                || this.moveItemStackTo(stack, 0, BUFFER_SLOT_COUNT, false);
+        return this.moveItemStackTo(stack, start, end, false);
+    }
+
+    private boolean moveEquipmentFromStack(ItemStack stack) {
+        if (ModItems.isDrone(stack)) {
+            return moveToEquipment(stack, firstDroneMenuIndex(), droneMenuIndexEnd());
+        }
+        if (ModItems.isAnyDrill(stack)) {
+            return moveToEquipment(stack, firstDrillMenuIndex(), drillMenuIndexEnd());
+        }
+        if (stack.is(ModItems.MODULE_DIGGER.get())) {
+            return moveToEquipment(stack, diggerModuleMenuIndex(), diggerModuleMenuIndex() + 1);
+        }
+        if (stack.is(ModItems.MODULE_SPEED.get())) {
+            return moveToEquipment(stack, speedModuleMenuIndex(), speedModuleMenuIndex() + 1);
+        }
+        if (stack.is(ModItems.MODULE_FORTUNE.get()) || stack.is(ModItems.MODULE_SILK_TOUCH.get())) {
+            return moveToEquipment(stack, enchantModuleMenuIndex(), enchantModuleMenuIndex() + 1);
+        }
+        return false;
     }
 
     public QuarryBlockEntity getBlockEntity() {
@@ -376,5 +392,13 @@ public class QuarryMenu extends AbstractContainerMenu {
             return this.blockPos;
         }
         return new BlockPos(x, y, z);
+    }
+
+    public int getProcessedAreaChunkCount() {
+        return containerData.get(PROCESSED_CHUNKS_INDEX);
+    }
+
+    public int getTotalAreaChunkCount() {
+        return containerData.get(TOTAL_CHUNKS_INDEX);
     }
 }

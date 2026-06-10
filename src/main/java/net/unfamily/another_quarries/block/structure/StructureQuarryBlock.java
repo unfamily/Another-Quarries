@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
@@ -69,6 +70,14 @@ public final class StructureQuarryBlock extends Block implements SimpleWaterlogg
     @Override
     protected SoundType getSoundType(BlockState state) {
         return SoundType.COPPER;
+    }
+
+    @Override
+    public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state, Player player) {
+        if (!level.isClientSide() && level instanceof ServerLevel server) {
+            StructureQuarryBreakCascade.startFromPlayerBreak(server, pos);
+        }
+        return super.playerWillDestroy(level, pos, state, player);
     }
 
     @Override

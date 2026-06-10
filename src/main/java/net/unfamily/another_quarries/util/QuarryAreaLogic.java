@@ -1,7 +1,12 @@
 package net.unfamily.another_quarries.util;
 
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.phys.AABB;
 import net.unfamily.another_quarries.config.ModConfig;
 
@@ -625,6 +630,269 @@ public final class QuarryAreaLogic {
     /** Y of the first row below the configured volume (base row). */
     public static int belowVolumeStartY(BlockPos quarryPos, Direction facing) {
         return miningBase(quarryPos, facing).getY() - 1;
+    }
+
+    /** World Y for a volume layer index ({@code volumeDy == sizeHeight} is the top interior row). */
+    public static int volumeLayerWorldY(BlockPos quarryPos, Direction facing, int volumeDy, int sizeHeight) {
+        int clampedDy = Math.min(sizeHeight, Math.max(0, volumeDy));
+        return miningBase(quarryPos, facing).getY() + clampedDy;
+    }
+
+    /** Interior column count for one horizontal slice (below phase and typical volume rows). */
+    public static int interiorColumnsCount(int sizeLeft, int sizeRight, int sizeDepth) {
+        return enumerateInteriorColumns(sizeLeft, sizeRight, sizeDepth).size();
+    }
+
+    /** Horizontal X/Z bounds of interior mining positions at one world Y (empty if none). */
+    public record LayerFootprintBounds(int minX, int maxX, int minZ, int maxZ, int y) {
+        public boolean isEmpty() {
+            return minX > maxX || minZ > maxZ;
+        }
+
+        public LayerFootprintBounds clipToChunk(int chunkX, int chunkZ) {
+            int chunkMinX = chunkX << 4;
+            int chunkMaxX = chunkMinX + 15;
+            int chunkMinZ = chunkZ << 4;
+            int chunkMaxZ = chunkMinZ + 15;
+            int clippedMinX = Math.max(minX, chunkMinX);
+            int clippedMaxX = Math.min(maxX, chunkMaxX);
+            int clippedMinZ = Math.max(minZ, chunkMinZ);
+            int clippedMaxZ = Math.min(maxZ, chunkMaxZ);
+            if (clippedMinX > clippedMaxX || clippedMinZ > clippedMaxZ) {
+                return new LayerFootprintBounds(1, 0, 1, 0, y);
+            }
+            return new LayerFootprintBounds(clippedMinX, clippedMaxX, clippedMinZ, clippedMaxZ, y);
+        }
+    }
+
+    /**
+     * True when {@code pos} is an interior mining cell (volume or below footprint) at its own Y.
+     * Does not read the world.
+     */
+    public static boolean isInteriorMiningPosition(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth,
+            BlockPos pos) {
+        int[] grid = new int[4];
+        if (!tryDecodeInteriorGrid(quarryPos, facing, sizeLeft, sizeRight, sizeDepth, pos, grid)) {
+            return false;
+        }
+        int dl = grid[0];
+        int dr = grid[1];
+        int dd = grid[2];
+        int dy = grid[3];
+        if (dy >= 0 && dy <= sizeHeight) {
+            return !isBorderShell(dl, dr, dd, dy, sizeLeft, sizeRight, sizeDepth, sizeHeight);
+        }
+        if (dy < 0) {
+            return !isHorizontalBorderShell(dl, dr, dd, sizeLeft, sizeRight, sizeDepth);
+        }
+        return false;
+    }
+
+    /** X/Z bounds of interior positions at {@code worldY}, optionally limited to one chunk column. */
+    public static LayerFootprintBounds interiorLayerBoundsAtWorldY(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeHeight,
+            int sizeDepth,
+            int worldY,
+            int chunkX,
+            int chunkZ,
+            boolean limitToChunk) {
+        BlockPos base = miningBase(quarryPos, facing);
+        int dy = worldY - base.getY();
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+
+        if (dy >= 0 && dy <= sizeHeight) {
+            Direction back = facing.getOpposite();
+            Direction left = facing.getCounterClockWise(Direction.Axis.Y);
+            Direction right = facing.getClockWise(Direction.Axis.Y);
+            for (int dd = 0; dd <= sizeDepth; dd++) {
+                for (int dl = 0; dl <= sizeLeft; dl++) {
+                    for (int dr = 0; dr <= sizeRight; dr++) {
+                        if (isBorderShell(dl, dr, dd, dy, sizeLeft, sizeRight, sizeDepth, sizeHeight)) {
+                            continue;
+                        }
+                        BlockPos pos = offsetFromBase(base, back, left, right, dl, dr, dy, dd);
+                        if (limitToChunk && ((pos.getX() >> 4) != chunkX || (pos.getZ() >> 4) != chunkZ)) {
+                            continue;
+                        }
+                        minX = Math.min(minX, pos.getX());
+                        maxX = Math.max(maxX, pos.getX());
+                        minZ = Math.min(minZ, pos.getZ());
+                        maxZ = Math.max(maxZ, pos.getZ());
+                    }
+                }
+            }
+        } else if (dy < 0) {
+            for (InteriorColumn column : enumerateInteriorColumns(sizeLeft, sizeRight, sizeDepth)) {
+                BlockPos pos = columnBlockAtY(quarryPos, facing, column, worldY);
+                if (limitToChunk && ((pos.getX() >> 4) != chunkX || (pos.getZ() >> 4) != chunkZ)) {
+                    continue;
+                }
+                minX = Math.min(minX, pos.getX());
+                maxX = Math.max(maxX, pos.getX());
+                minZ = Math.min(minZ, pos.getZ());
+                maxZ = Math.max(maxZ, pos.getZ());
+            }
+        }
+
+        if (minX == Integer.MAX_VALUE) {
+            return new LayerFootprintBounds(1, 0, 1, 0, worldY);
+        }
+        return new LayerFootprintBounds(minX, maxX, minZ, maxZ, worldY);
+    }
+
+    /**
+     * Chunk-aligned next position within horizontal bounds with vertical descent at chunk slice boundaries.
+     * Returns {@code null} when the full 3D sweep from {@code scanTopY} down to {@code minWorldY} is complete.
+     */
+    public static BlockPos nextAirSkipPosition(
+            BlockPos cursor, LayerFootprintBounds bounds, int minWorldY, int scanTopY) {
+        if (bounds.isEmpty()) {
+            return null;
+        }
+        int x = cursor.getX();
+        int y = cursor.getY();
+        int z = cursor.getZ();
+
+        if (x >= bounds.maxX() || ((x + 1) & 15) == 0) {
+            if (z >= bounds.maxZ() || ((z + 1) & 15) == 0) {
+                if (y <= minWorldY) {
+                    if (x < bounds.maxX()) {
+                        return new BlockPos(x + 1, scanTopY, (z >> 4) << 4);
+                    }
+                    if (z < bounds.maxZ()) {
+                        return new BlockPos((bounds.minX() >> 4) << 4, scanTopY, z + 1);
+                    }
+                    return null;
+                }
+                return new BlockPos((x >> 4) << 4, y - 1, (z >> 4) << 4);
+            }
+            return new BlockPos((x >> 4) << 4, y, z + 1);
+        }
+        return new BlockPos(x + 1, y, z);
+    }
+
+    /** Starting corner for a 3D sweep (chunk-aligned, top Y). */
+    public static BlockPos initialAirSkipPosition(LayerFootprintBounds bounds, int scanTopY) {
+        if (bounds.isEmpty()) {
+            return null;
+        }
+        return new BlockPos((bounds.minX() >> 4) << 4, scanTopY, (bounds.minZ() >> 4) << 4);
+    }
+
+    /**
+     * Decodes world position into interior grid indices. {@code out} receives dl, dr, dd, dy on success.
+     */
+    public static boolean tryDecodeInteriorGrid(
+            BlockPos quarryPos,
+            Direction facing,
+            int sizeLeft,
+            int sizeRight,
+            int sizeDepth,
+            BlockPos pos,
+            int[] out) {
+        if (out == null || out.length < 4) {
+            return false;
+        }
+        BlockPos base = miningBase(quarryPos, facing);
+        int dy = pos.getY() - base.getY();
+        Direction back = facing.getOpposite();
+        Direction left = facing.getCounterClockWise(Direction.Axis.Y);
+        Direction right = facing.getClockWise(Direction.Axis.Y);
+
+        int dx = pos.getX() - base.getX();
+        int dz = pos.getZ() - base.getZ();
+        int dd = dx * back.getStepX() + dz * back.getStepZ();
+        if (dd < 0 || dd > sizeDepth) {
+            return false;
+        }
+
+        int horizDx = dx - back.getStepX() * dd;
+        int horizDz = dz - back.getStepZ() * dd;
+        int dl = horizDx * left.getStepX() + horizDz * left.getStepZ();
+        int dr = horizDx * right.getStepX() + horizDz * right.getStepZ();
+        if (dl < 0 || dr < 0 || dl > sizeLeft || dr > sizeRight) {
+            return false;
+        }
+
+        int checkX = left.getStepX() * dl + right.getStepX() * dr + back.getStepX() * dd;
+        int checkZ = left.getStepZ() * dl + right.getStepZ() * dr + back.getStepZ() * dd;
+        if (checkX != dx || checkZ != dz) {
+            return false;
+        }
+
+        out[0] = dl;
+        out[1] = dr;
+        out[2] = dd;
+        out[3] = dy;
+        return true;
+    }
+
+    public enum LayerSectionStatus {
+        ALL_AIR,
+        CONTAINS_BLOCKS,
+        UNLOADED
+    }
+
+    /**
+     * Checks whether every chunk in {@code areaChunks} has an air-only section at {@code worldY}.
+     * When {@code singleChunkOnly} is true, only {@code chunkX}/{@code chunkZ} are checked.
+     */
+    public static LayerSectionStatus checkLayerSectionsEmpty(
+            Level level,
+            LongArrayList areaChunks,
+            int worldY,
+            boolean singleChunkOnly,
+            int chunkX,
+            int chunkZ) {
+        if (singleChunkOnly) {
+            return checkChunkSectionEmpty(level, chunkX, chunkZ, worldY);
+        }
+        if (areaChunks.isEmpty()) {
+            return LayerSectionStatus.ALL_AIR;
+        }
+        for (int i = 0; i < areaChunks.size(); i++) {
+            ChunkPos chunkPos = ChunkPos.unpack(areaChunks.getLong(i));
+            LayerSectionStatus status = checkChunkSectionEmpty(level, chunkPos.x(), chunkPos.z(), worldY);
+            if (status != LayerSectionStatus.ALL_AIR) {
+                return status;
+            }
+        }
+        return LayerSectionStatus.ALL_AIR;
+    }
+
+    private static LayerSectionStatus checkChunkSectionEmpty(Level level, int chunkX, int chunkZ, int worldY) {
+        if (level.isOutsideBuildHeight(worldY)) {
+            return LayerSectionStatus.CONTAINS_BLOCKS;
+        }
+        if (!level.hasChunk(chunkX, chunkZ)) {
+            return LayerSectionStatus.UNLOADED;
+        }
+        if (!(level.getChunk(chunkX, chunkZ) instanceof LevelChunk chunk)) {
+            return LayerSectionStatus.UNLOADED;
+        }
+        int sectionIndex = chunk.getSectionIndex(worldY);
+        LevelChunkSection[] sections = chunk.getSections();
+        if (sectionIndex < 0 || sectionIndex >= sections.length) {
+            return LayerSectionStatus.CONTAINS_BLOCKS;
+        }
+        LevelChunkSection section = sections[sectionIndex];
+        if (section == null || !section.hasOnlyAir()) {
+            return LayerSectionStatus.CONTAINS_BLOCKS;
+        }
+        return LayerSectionStatus.ALL_AIR;
     }
 
     /**

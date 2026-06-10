@@ -12,6 +12,7 @@ import net.unfamily.another_quarries.block.QuarryBlock;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
 import net.unfamily.another_quarries.config.ModConfig;
+import net.unfamily.another_quarries.util.QuarryAreaLogic;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
 
 import java.util.ArrayList;
@@ -20,8 +21,6 @@ import java.util.List;
 import java.util.Set;
 
 public final class QuarryMiningEngine {
-    private static final int AIR_SKIP_INTERVAL_TICKS = 20;
-
     private final QuarryBlockEntity quarry;
     private final QuarryFrameController frameController = new QuarryFrameController();
     private QuarryBlockQueue queue = QuarryBlockQueue.empty();
@@ -29,12 +28,14 @@ public final class QuarryMiningEngine {
     private boolean queueBuilt;
     private int queueSignature;
     private int activeChunkIndex;
+    private int volumeSliceChunkIndex;
     private QuarryBlockQueue.Phase miningPhase = QuarryBlockQueue.Phase.CLEAR_VOLUME;
     private int volumeDy = -1;
     private int belowLayer;
     private int layerCursor;
+    private boolean airSkipCursorActive;
+    private BlockPos airSkipCursor = BlockPos.ZERO;
     private int regenScanCooldown;
-    private int airSkipCooldown;
 
     public QuarryMiningEngine(QuarryBlockEntity quarry) {
         this.quarry = quarry;
@@ -289,9 +290,12 @@ public final class QuarryMiningEngine {
 
     private boolean tickMining(ServerLevel level, Direction facing, MiningTickContext tickCtx) {
         ensureQueue(level);
-        if (queueBuilt && --airSkipCooldown <= 0) {
-            airSkipCooldown = AIR_SKIP_INTERVAL_TICKS;
-            queue.fastSkipAir(level);
+        if (queueBuilt && workers.stream().noneMatch(w -> w.target != null)) {
+            int maxMiningLevel = tickCtx.drill().maxMiningLevel();
+            queue.advanceThroughEmptyLayers(
+                    level,
+                    maxMiningLevel,
+                    ModConfig.airSkipMaxLayersPerTick());
         }
         scanRegeneratedBlocksIfDue(level);
 
@@ -344,7 +348,9 @@ public final class QuarryMiningEngine {
             quarry.setChanged();
         }
 
-        boolean active = progressed || workers.stream().anyMatch(w -> w.target != null);
+        boolean active = progressed
+                || workers.stream().anyMatch(w -> w.target != null)
+                || (queueBuilt && queue.hasPendingMiningWork(level));
         setQuarryVisual(level, active ? QuarryBlock.QuarryState.ON : QuarryBlock.QuarryState.OFF);
         syncQueueState();
         return active;
@@ -422,6 +428,58 @@ public final class QuarryMiningEngine {
         return getActiveTargetPositions();
     }
 
+    public int getTotalAreaChunkCount() {
+        Level level = quarry.getLevel();
+        if (level == null) {
+            return 0;
+        }
+        Direction facing = level.getBlockState(quarry.getBlockPos()).getValue(HorizontalDirectionalBlock.FACING);
+        return QuarryBlockQueue.chunkCount(
+                quarry.getBlockPos(),
+                facing,
+                quarry.getSizeLeft(),
+                quarry.getSizeRight(),
+                quarry.getSizeHeight(),
+                quarry.getSizeDepth());
+    }
+
+    public int getProcessedAreaChunkCount() {
+        Level level = quarry.getLevel();
+        if (level == null) {
+            return 0;
+        }
+        if (level instanceof ServerLevel serverLevel) {
+            ensureQueue(serverLevel);
+            syncQueueState();
+            if (queueBuilt && !queue.isPlaceholder()) {
+                return queue.getProcessedChunkCount(level);
+            }
+        }
+        int total = getTotalAreaChunkCount();
+        if (total == 0) {
+            return 0;
+        }
+        if (quarry.getDiggingMode() == QuarryDiggingMode.CHUNK) {
+            return Math.min(activeChunkIndex, total);
+        }
+        if (usesVolumeChunkSlice()) {
+            return Math.min(volumeSliceChunkIndex, total);
+        }
+        return 0;
+    }
+
+    private boolean usesVolumeChunkSlice() {
+        if (quarry.getDiggingMode() != QuarryDiggingMode.VOLUME) {
+            return false;
+        }
+        int threshold = ModConfig.airSkipChunkSliceMinInteriorBlocks();
+        if (threshold <= 0) {
+            return false;
+        }
+        return QuarryAreaLogic.interiorColumnsCount(
+                quarry.getSizeLeft(), quarry.getSizeRight(), quarry.getSizeDepth()) >= threshold;
+    }
+
     private void syncQueueState() {
         if (queueBuilt) {
             miningPhase = queue.getPhase();
@@ -429,6 +487,9 @@ public final class QuarryMiningEngine {
             belowLayer = queue.getBelowLayer();
             layerCursor = queue.getCursor();
             activeChunkIndex = queue.getChunkIndex();
+            volumeSliceChunkIndex = queue.getVolumeSliceChunkIndex();
+            airSkipCursorActive = queue.isAirSkipCursorActive();
+            airSkipCursor = queue.getAirSkipCursor();
         }
     }
 
@@ -478,10 +539,13 @@ public final class QuarryMiningEngine {
 
         if (signature != queueSignature) {
             activeChunkIndex = 0;
+            volumeSliceChunkIndex = 0;
             miningPhase = QuarryBlockQueue.Phase.CLEAR_VOLUME;
             volumeDy = -1;
             belowLayer = 0;
             layerCursor = 0;
+            airSkipCursorActive = false;
+            airSkipCursor = BlockPos.ZERO;
         }
 
         List<BlockPos> pendingRegen = queueBuilt && signature == queueSignature
@@ -497,10 +561,13 @@ public final class QuarryMiningEngine {
                 quarry.getSizeDepth(),
                 quarry.getDiggingMode(),
                 activeChunkIndex,
+                volumeSliceChunkIndex,
                 miningPhase,
                 dy,
                 belowLayer,
-                layerCursor);
+                layerCursor,
+                airSkipCursorActive,
+                airSkipCursor);
         queue.setRegenQueue(pendingRegen);
         queueBuilt = true;
         queueSignature = signature;
@@ -581,12 +648,14 @@ public final class QuarryMiningEngine {
     public void invalidateQueue() {
         queueBuilt = false;
         activeChunkIndex = 0;
+        volumeSliceChunkIndex = 0;
+        airSkipCursorActive = false;
+        airSkipCursor = BlockPos.ZERO;
         miningPhase = QuarryBlockQueue.Phase.CLEAR_VOLUME;
         volumeDy = -1;
         belowLayer = 0;
         layerCursor = 0;
         regenScanCooldown = ModConfig.regenScanIntervalTicks();
-        airSkipCooldown = 0;
         resetWorkerTargets();
     }
 
@@ -606,6 +675,12 @@ public final class QuarryMiningEngine {
         output.putInt("QueueSignature", queueSignature);
         output.putBoolean("QueueBuilt", queueBuilt);
         output.putInt("ActiveChunkIndex", activeChunkIndex);
+        output.putInt("VolumeSliceChunkIndex", queueBuilt ? queue.getVolumeSliceChunkIndex() : volumeSliceChunkIndex);
+        output.putBoolean("AirSkipCursorActive", queueBuilt ? queue.isAirSkipCursorActive() : airSkipCursorActive);
+        BlockPos savedCursor = queueBuilt ? queue.getAirSkipCursor() : airSkipCursor;
+        output.putInt("AirSkipCursorX", savedCursor.getX());
+        output.putInt("AirSkipCursorY", savedCursor.getY());
+        output.putInt("AirSkipCursorZ", savedCursor.getZ());
         output.putString("MiningPhase", miningPhase.name());
         output.putInt("BelowLayer", belowLayer);
         output.putInt("RegenScanCooldown", regenScanCooldown);
@@ -623,6 +698,12 @@ public final class QuarryMiningEngine {
         queueSignature = input.getIntOr("QueueSignature", 0);
         queueBuilt = input.getBooleanOr("QueueBuilt", false);
         activeChunkIndex = input.getIntOr("ActiveChunkIndex", 0);
+        volumeSliceChunkIndex = input.getIntOr("VolumeSliceChunkIndex", 0);
+        airSkipCursorActive = input.getBooleanOr("AirSkipCursorActive", false);
+        airSkipCursor = new BlockPos(
+                input.getIntOr("AirSkipCursorX", 0),
+                input.getIntOr("AirSkipCursorY", 0),
+                input.getIntOr("AirSkipCursorZ", 0));
         try {
             miningPhase = QuarryBlockQueue.Phase.valueOf(
                     input.getStringOr("MiningPhase", QuarryBlockQueue.Phase.CLEAR_VOLUME.name()));

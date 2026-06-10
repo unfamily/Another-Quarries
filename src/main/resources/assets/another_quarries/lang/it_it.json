@@ -32,6 +32,7 @@
   "gui.another_quarries.quarry.digging_mode.volume.tooltip": "Scava tutta l'area configurata insieme",
   "gui.another_quarries.quarry.digging_mode.chunk.tooltip": "Scava un chunk alla volta nell'area configurata",
   "gui.another_quarries.quarry.size": "Dimensioni: (%s+%s)+1=%sx%sx%s",
+  "gui.another_quarries.quarry.chunks_progress": "Chunk: %s / %s",
   "gui.another_quarries.quarry.energy": "%s / %s RF",
   "gui.another_quarries.quarry.rf_per_block": "%s RF per blocco",
   "gui.another_quarries.quarry.rf_per_block_worker": "%s RF per blocco (per worker)",
