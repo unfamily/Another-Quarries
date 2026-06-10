@@ -10,11 +10,6 @@ public class QuarryBufferHandler extends ItemStackHandler {
     }
 
     @Override
-    public boolean isItemValid(int slot, ItemStack stack) {
-        return false;
-    }
-
-    @Override
     public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
         return stack;
     }
