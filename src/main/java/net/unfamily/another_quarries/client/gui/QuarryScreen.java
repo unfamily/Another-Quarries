@@ -60,7 +60,9 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private static final int REBOOT_BUTTON_Y = ROW2_Y;
     private static final int REDSTONE_X = REBOOT_BUTTON_X + (REBOOT_BUTTON_W - MachineGuiButtons.ICON_SIZE) / 2;
     private static final int REDSTONE_Y = REBOOT_BUTTON_Y - GAP - MachineGuiButtons.ICON_SIZE;
-    /** Left column: preview + digging mode stacked; arrow cluster to the right (Collecting Crate pattern). */
+    /**
+     * Left column: preview + digging mode stacked; arrow cluster to the right (Collecting Crate pattern).
+     */
     private static final int PREVIEW_BUTTON_X = QuarryMenu.CONTROL_BAND_LEFT + 1;
     private static final int PREVIEW_BUTTON_W = 46;
     private static final int ARROW_GROUP_LEFT_X = PREVIEW_BUTTON_X + PREVIEW_BUTTON_W + GAP;
@@ -183,7 +185,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
             diggingModeButton.setMessage(Component.translatable("gui.another_quarries.quarry.digging_mode.chunk"));
             diggingModeButton.setTooltip(Tooltip.create(forcedChunk
                     ? Component.translatable("gui.another_quarries.quarry.digging_mode.chunk.disabled.tooltip",
-                            ModConfig.volumeModeMaxFootprint())
+                    ModConfig.volumeModeMaxFootprint())
                     : Component.translatable("gui.another_quarries.quarry.digging_mode.chunk.tooltip")));
         } else {
             diggingModeButton.setMessage(Component.translatable("gui.another_quarries.quarry.digging_mode.volume"));
@@ -521,3 +523,4 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         return super.mouseClicked(event, doubleClick);
     }
 }
+
