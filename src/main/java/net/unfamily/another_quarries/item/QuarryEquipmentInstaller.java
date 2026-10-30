@@ -70,6 +70,8 @@ public final class QuarryEquipmentInstaller {
             remaining = insertIntoSlot(handler, remaining, QuarryEquipmentSlots.enchantModuleSlot());
         } else if (remaining.is(ModItems.MODULE_FILTER.get())) {
             remaining = insertIntoSlot(handler, remaining, QuarryEquipmentSlots.filterModuleSlot());
+        } else if (remaining.is(ModItems.MODULE_PUMP.get())) {
+            remaining = insertIntoSlot(handler, remaining, QuarryEquipmentSlots.pumpModuleSlot());
         }
         return remaining;
     }

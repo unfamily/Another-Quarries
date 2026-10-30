@@ -6,20 +6,21 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.registry.ModItems;
 
 public final class QuarryEquipmentSlots {
-    private static final int UPGRADE_SLOT_COUNT = 4;
+    private static final int UPGRADE_SLOT_COUNT = 5;
 
     /** Built-in worker when no drones are installed; slot drones are extra workers on top. */
     public static final int BASE_WORKER_COUNT = 1;
 
     public static final int MAX_DRILL_STACK = 1;
 
-    public static final int EQUIPMENT_LAYOUT_VERSION = 5;
+    public static final int EQUIPMENT_LAYOUT_VERSION = 6;
 
     /** Layout v3 indices kept for NBT migration only. */
     private static final int LEGACY_V3_DRONE_SLOT = 0;
@@ -46,7 +47,7 @@ public final class QuarryEquipmentSlots {
         return ModConfig.equipmentDrillSlots();
     }
 
-    /** Handler slots: drones + drills + digger/speed/enchant/filter. */
+    /** Handler slots: drones + drills + digger/speed/enchant/filter/pump. */
     public static int slotCount() {
         return droneSlotCount() + drillSlotCount() + UPGRADE_SLOT_COUNT;
     }
@@ -73,6 +74,10 @@ public final class QuarryEquipmentSlots {
 
     public static int filterModuleSlot() {
         return diggerModuleSlot() + 3;
+    }
+
+    public static int pumpModuleSlot() {
+        return diggerModuleSlot() + 4;
     }
 
     /** @deprecated use {@link #drillSlotStart()} */
@@ -113,6 +118,9 @@ public final class QuarryEquipmentSlots {
         if (slot == filterModuleSlot()) {
             return stack.is(ModItems.MODULE_FILTER.get());
         }
+        if (slot == pumpModuleSlot()) {
+            return stack.is(ModItems.MODULE_PUMP.get());
+        }
         return false;
     }
 
@@ -134,6 +142,9 @@ public final class QuarryEquipmentSlots {
         }
         if (slot == filterModuleSlot()) {
             return ModConfig.maxFilterModules();
+        }
+        if (slot == pumpModuleSlot()) {
+            return ModConfig.maxPumpModules();
         }
         return 0;
     }
@@ -179,6 +190,10 @@ public final class QuarryEquipmentSlots {
         return !handler.getStackInSlot(filterModuleSlot()).isEmpty();
     }
 
+    public static boolean hasPumpModule(ItemStackHandler handler) {
+        return !handler.getStackInSlot(pumpModuleSlot()).isEmpty();
+    }
+
     public static int fortuneLevel(ItemStackHandler handler) {
         return fortuneLevel(handler, null);
     }
@@ -192,10 +207,7 @@ public final class QuarryEquipmentSlots {
             if (hasSilkTouch(handler, registries)) {
                 return 0;
             }
-            var lookup = registries.lookupOrThrow(Registries.ENCHANTMENT);
-            return Math.min(
-                    enchantLevel(stack, lookup.getOrThrow(Enchantments.FORTUNE)),
-                    ModConfig.maxFortuneModules());
+            return Math.min(fortuneLikeLevel(stack, registries), ModConfig.maxFortuneModules());
         }
         return 0;
     }
@@ -221,8 +233,7 @@ public final class QuarryEquipmentSlots {
         if (!stack.is(ModItems.MODULE_ENCHANT.get()) || registries == null) {
             return 0;
         }
-        var lookup = registries.lookupOrThrow(Registries.ENCHANTMENT);
-        return enchantLevel(stack, lookup.getOrThrow(Enchantments.FORTUNE));
+        return fortuneLikeLevel(stack, registries);
     }
 
     public static boolean rawEnchantModuleSilkTouch(ItemStackHandler handler, HolderLookup.Provider registries) {
@@ -236,6 +247,18 @@ public final class QuarryEquipmentSlots {
 
     private static int enchantLevel(ItemStack stack, Holder<Enchantment> enchantment) {
         return stack.getEnchantmentLevel(enchantment);
+    }
+
+    /** Vanilla fortune plus any enchantment in {@code #c:enchantments/increase_block_drops}. */
+    private static int fortuneLikeLevel(ItemStack stack, HolderLookup.Provider registries) {
+        var lookup = registries.lookupOrThrow(Registries.ENCHANTMENT);
+        int max = enchantLevel(stack, lookup.getOrThrow(Enchantments.FORTUNE));
+        for (var entry : stack.getEnchantments().entrySet()) {
+            if (entry.getKey().is(Tags.Enchantments.INCREASE_BLOCK_DROPS)) {
+                max = Math.max(max, entry.getIntValue());
+            }
+        }
+        return max;
     }
 
     public static int equipmentMenuIndex(int equipmentSlot) {

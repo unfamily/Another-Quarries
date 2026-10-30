@@ -6,11 +6,13 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.unfamily.another_quarries.AnotherQuarries;
-import net.unfamily.another_quarries.network.InteractionHandNetworking;
 import net.unfamily.another_quarries.client.gui.QuarryFilterModuleMenu;
 import net.unfamily.another_quarries.integration.anotherdynamics.QuarryFilterCopierCompat;
+import net.unfamily.another_quarries.item.QuarryFilterModuleData;
+import net.unfamily.another_quarries.network.InteractionHandNetworking;
 import net.unfamily.another_quarries.network.ModNetworking;
 
 public record QuarryFilterPasteFromCopierC2SPacket(InteractionHand hand) implements CustomPacketPayload {
@@ -32,11 +34,16 @@ public record QuarryFilterPasteFromCopierC2SPacket(InteractionHand hand) impleme
             if (!(context.player() instanceof ServerPlayer player)) {
                 return;
             }
+            ItemStack module = player.getItemInHand(packet.hand());
+            if (!QuarryFilterModuleData.isListModule(module)) {
+                return;
+            }
             if (!(player.containerMenu instanceof QuarryFilterModuleMenu menu)
                     || menu.getEditHand() != packet.hand()) {
                 return;
             }
-            QuarryFilterCopierCompat.PasteResult result = QuarryFilterCopierCompat.readFilterLinesFromCopier(player);
+            QuarryFilterCopierCompat.PasteResult result =
+                    QuarryFilterCopierCompat.readLinesFromCopier(menu.copierSlotStack(), menu.isPumpVariant());
             result.sendTo(player);
             if (result.success()) {
                 menu.replaceServerDraft(result.lines());

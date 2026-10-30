@@ -1,18 +1,24 @@
 package net.unfamily.another_quarries.client.gui;
 
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.unfamily.another_quarries.mining.QuarryFluidFilterMatcher;
 import net.unfamily.another_quarries.mining.QuarryItemFilterMatcher;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/** Client preview icon for a single quarry deny-filter line. */
+/** Client preview icon for a single quarry destroy-filter or pump drain-list line. */
 public final class QuarryFilterRowDisplay {
     private QuarryFilterRowDisplay() {}
 
@@ -21,11 +27,86 @@ public final class QuarryFilterRowDisplay {
             return ItemStack.EMPTY;
         }
         String filter = filterLine.trim();
-        if (filter.isEmpty() || QuarryItemFilterMatcher.isUnsupportedPrefix(filter)) {
+        if (filter.isEmpty()) {
             return ItemStack.EMPTY;
         }
+        // &anything_else is pump-only; ignore on destroy-list preview.
+        if (QuarryFluidFilterMatcher.isAnythingElseLine(filter)
+                || (QuarryItemFilterMatcher.isUnsupportedPrefix(filter) && !filter.startsWith("&"))) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack item = previewItemOnlyTrimmed(filter);
+        if (!item.isEmpty()) {
+            return item;
+        }
+        return bucketFor(resolveFluid(filter));
+    }
+
+    /** Item-side preview only (no fluid-bucket fallback). */
+    public static ItemStack previewItemOnly(String filterLine) {
+        if (filterLine == null || filterLine.isBlank()) {
+            return ItemStack.EMPTY;
+        }
+        return previewItemOnlyTrimmed(filterLine.trim());
+    }
+
+    /** Preview for the pump drain list: fluids are shown as their bucket item. */
+    public static ItemStack previewStackForPump(String filterLine) {
+        if (filterLine == null || filterLine.isBlank()) {
+            return ItemStack.EMPTY;
+        }
+        String filter = filterLine.trim();
+        if (QuarryFluidFilterMatcher.isAnythingElseLine(filter)) {
+            return new ItemStack(Items.KNOWLEDGE_BOOK);
+        }
+        Fluid fluid = resolveFluid(filter);
+        return bucketFor(fluid);
+    }
+
+    /** Resolves the first fluid referenced by a drain-list line (id, tag or mod prefix). */
+    public static Fluid resolveFluid(String filter) {
+        if (filter == null || filter.isBlank()) {
+            return Fluids.EMPTY;
+        }
+        String f = filter.trim();
+        if (f.startsWith("-")) {
+            return fluidById(f.substring(1));
+        }
+        if (f.startsWith("#")) {
+            return fluidForTag(f.substring(1));
+        }
+        if (f.startsWith("@")) {
+            return fluidForMod(f.substring(1));
+        }
+        if (f.startsWith("&") || f.startsWith("?")) {
+            return Fluids.EMPTY;
+        }
+        return fluidById(f);
+    }
+
+    public static ItemStack bucketFor(Fluid fluid) {
+        if (fluid == null || fluid == Fluids.EMPTY) {
+            return ItemStack.EMPTY;
+        }
+        Item bucket = fluid.getBucket();
+        if (bucket == null || bucket == Items.AIR) {
+            return ItemStack.EMPTY;
+        }
+        return new ItemStack(bucket);
+    }
+
+    /** FluidStack for slot rendering (1000 mB), or empty when the line is not a fluid filter. */
+    public static FluidStack previewFluidStack(String filterLine) {
+        Fluid fluid = resolveFluid(filterLine);
+        if (fluid == Fluids.EMPTY) {
+            return FluidStack.EMPTY;
+        }
+        return new FluidStack(fluid, 1000);
+    }
+
+    private static ItemStack previewItemOnlyTrimmed(String filter) {
         if (filter.startsWith("-")) {
-            return itemById(filter.substring(1));
+            return itemByIdOnly(filter.substring(1));
         }
         if (filter.startsWith("#")) {
             return itemForTag(filter.substring(1));
@@ -33,14 +114,65 @@ public final class QuarryFilterRowDisplay {
         if (filter.startsWith("@")) {
             return itemForMod(filter.substring(1));
         }
-        return itemById(filter);
+        if (filter.startsWith("&") || filter.startsWith("?")) {
+            return ItemStack.EMPTY;
+        }
+        return itemByIdOnly(filter);
     }
 
-    private static ItemStack itemById(String idFilter) {
+    private static Fluid fluidById(String idFilter) {
+        try {
+            ResourceLocation id = ResourceLocation.parse(idFilter);
+            Fluid fluid = BuiltInRegistries.FLUID.get(id);
+            return fluid == null ? Fluids.EMPTY : fluid;
+        } catch (Exception ignored) {
+            return Fluids.EMPTY;
+        }
+    }
+
+    private static Fluid fluidForTag(String tagId) {
+        try {
+            TagKey<Fluid> fluidTag = TagKey.create(Registries.FLUID, ResourceLocation.parse(tagId));
+            List<Fluid> fluids = new ArrayList<>();
+            for (Holder<Fluid> holder : BuiltInRegistries.FLUID.getTagOrEmpty(fluidTag)) {
+                if (!bucketFor(holder.value()).isEmpty()) {
+                    fluids.add(holder.value());
+                }
+            }
+            if (fluids.isEmpty()) {
+                return Fluids.EMPTY;
+            }
+            return fluids.get((int) ((System.currentTimeMillis() / 2000L) % fluids.size()));
+        } catch (Exception ignored) {
+            return Fluids.EMPTY;
+        }
+    }
+
+    private static Fluid fluidForMod(String modPrefix) {
+        if (modPrefix.isEmpty()) {
+            return Fluids.EMPTY;
+        }
+        List<Fluid> fluids = new ArrayList<>();
+        for (Fluid fluid : BuiltInRegistries.FLUID) {
+            ResourceLocation id = BuiltInRegistries.FLUID.getKey(fluid);
+            if (id != null && id.getNamespace().startsWith(modPrefix) && !bucketFor(fluid).isEmpty()) {
+                fluids.add(fluid);
+            }
+        }
+        if (fluids.isEmpty()) {
+            return Fluids.EMPTY;
+        }
+        return fluids.get((int) ((System.currentTimeMillis() / 2000L) % fluids.size()));
+    }
+
+    private static ItemStack itemByIdOnly(String idFilter) {
         try {
             ResourceLocation id = ResourceLocation.parse(idFilter);
             Item item = BuiltInRegistries.ITEM.get(id);
-            return item == null || item == Items.AIR ? ItemStack.EMPTY : new ItemStack(item);
+            if (item != null && item != Items.AIR) {
+                return new ItemStack(item);
+            }
+            return ItemStack.EMPTY;
         } catch (Exception ignored) {
             return ItemStack.EMPTY;
         }

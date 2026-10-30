@@ -7,6 +7,11 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.FluidUtil;
+import net.unfamily.another_quarries.mining.QuarryFluidFilterMatcher;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -48,6 +53,80 @@ public final class QuarryFilterVariants {
             }
         }
         return variants;
+    }
+
+    /**
+     * True when a destroy-list line should be edited as a fluid filter
+     * (fluid id/tag/mod with no matching item). {@code &anything_else} is pump-only.
+     */
+    public static boolean isFluidOrientedDestroyLine(String line) {
+        if (line == null || line.isBlank()) {
+            return false;
+        }
+        String trimmed = line.trim();
+        if (QuarryFluidFilterMatcher.isAnythingElseLine(trimmed)) {
+            return false;
+        }
+        Fluid fluid = QuarryFilterRowDisplay.resolveFluid(trimmed);
+        if (fluid == Fluids.EMPTY) {
+            return false;
+        }
+        return QuarryFilterRowDisplay.previewItemOnly(trimmed).isEmpty();
+    }
+
+    /** Pump drain-list variants for a fluid: id, tags, mod prefix and the catch-all macro. */
+    public static List<String> variantsFromFluid(Fluid fluid) {
+        return variantsFromFluid(fluid, true);
+    }
+
+    /** Fluid variants; {@code includeAnythingElse} is true for the pump drain list only. */
+    public static List<String> variantsFromFluid(Fluid fluid, boolean includeAnythingElse) {
+        List<String> variants = new ArrayList<>();
+        if (fluid == null || fluid == Fluids.EMPTY) {
+            return variants;
+        }
+        ResourceLocation fluidId = BuiltInRegistries.FLUID.getKey(fluid);
+        if (fluidId == null) {
+            return variants;
+        }
+        variants.add("-" + fluidId);
+        BuiltInRegistries.FLUID.wrapAsHolder(fluid).tags()
+                .map(TagKey::location)
+                .map(ResourceLocation::toString)
+                .sorted()
+                .forEach(tagId -> variants.add("#" + tagId));
+        variants.add("@" + fluidId.getNamespace());
+        if (includeAnythingElse) {
+            variants.add(QuarryFluidFilterMatcher.ANYTHING_ELSE);
+        }
+        return variants;
+    }
+
+    /** Fluid contained in an item (bucket, tank), or empty when the stack holds none. */
+    public static Fluid fluidContainedIn(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return Fluids.EMPTY;
+        }
+        return FluidUtil.getFluidContained(stack)
+                .filter(contained -> !contained.isEmpty())
+                .map(FluidStack::getFluid)
+                .orElse(Fluids.EMPTY);
+    }
+
+    public static List<String> variantsForFluidLine(String line) {
+        return variantsForFluidLine(line, true);
+    }
+
+    public static List<String> variantsForFluidLine(String line, boolean includeAnythingElse) {
+        Set<String> out = new LinkedHashSet<>();
+        if (line != null && !line.isBlank()) {
+            out.addAll(variantsFromFluid(QuarryFilterRowDisplay.resolveFluid(line), includeAnythingElse));
+            String trimmed = line.trim();
+            if (includeAnythingElse || !QuarryFluidFilterMatcher.isAnythingElseLine(trimmed)) {
+                out.add(trimmed);
+            }
+        }
+        return new ArrayList<>(out);
     }
 
     public static List<String> variantsForLine(String line) {

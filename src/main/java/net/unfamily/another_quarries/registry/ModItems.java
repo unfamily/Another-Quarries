@@ -12,6 +12,7 @@ import net.unfamily.another_quarries.item.DescribedItem;
 import net.unfamily.another_quarries.item.EnchantableQuarryModuleItem;
 import net.unfamily.another_quarries.item.QuarryFilterModuleItem;
 import net.unfamily.another_quarries.item.QuarryModules;
+import net.unfamily.another_quarries.item.QuarryPumpModuleItem;
 
 public final class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(AnotherQuarries.MOD_ID);
@@ -47,6 +48,11 @@ public final class ModItems {
                     ITEM_PROPERTIES,
                     "tooltip.another_quarries.module_filter.desc0",
                     "tooltip.another_quarries.module_filter.desc1"));
+    public static final DeferredItem<Item> MODULE_PUMP = ITEMS.register("module_pump",
+            () -> new QuarryPumpModuleItem(
+                    ITEM_PROPERTIES,
+                    "tooltip.another_quarries.module_pump.desc0",
+                    "tooltip.another_quarries.module_pump.desc1"));
     public static final DeferredItem<Item> MODULE_ENCHANT = ITEMS.register("module_enchant",
             () -> new EnchantableQuarryModuleItem(
                     new Item.Properties().stacksTo(1),

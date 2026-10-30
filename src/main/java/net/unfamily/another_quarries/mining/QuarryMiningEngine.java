@@ -55,6 +55,15 @@ public final class QuarryMiningEngine {
             return false;
         }
 
+        QuarryFluidMining.activate(quarry.createFluidRules());
+        try {
+            return tickServer(serverLevel, level);
+        } finally {
+            QuarryFluidMining.deactivate();
+        }
+    }
+
+    private boolean tickServer(ServerLevel serverLevel, Level level) {
         ItemStackHandler equipment = quarry.getEquipmentHandler();
         int logicalWorkers = QuarryEquipmentSlots.effectiveWorkerCount(equipment);
         int activeWorkers = QuarryDrillAssigner.activeWorkerCount(equipment);
@@ -392,6 +401,10 @@ public final class QuarryMiningEngine {
                 worker.progress = worker.requiredTicks;
             }
 
+            if (QuarryFluidMining.isWaiting(level, worker.target, ctx.fluidRules())) {
+                // Pump target but every suitable tank is full: keep the target and do not advance.
+                break;
+            }
             if (quarry.getEnergyStorage().getEnergyStored() < rfPerBlock) {
                 break;
             }
@@ -521,8 +534,9 @@ public final class QuarryMiningEngine {
                 quarry.getDiggingMode(),
                 ItemStack.EMPTY,
                 quarry.isFilterModuleActive(),
-                quarry.getActiveItemDenyFilters());
-        ItemStack breakTool = QuarryBlockBreaker.buildBreakTool(base, level);
+                quarry.getActiveItemDenyFilters(),
+                QuarryFluidMining.active());
+        ItemStack breakTool = QuarryBlockBreaker.buildBreakTool(base, level, equipment);
         return new QuarryWorkContext(
                 base.drill(),
                 base.diggerModules(),
@@ -534,7 +548,8 @@ public final class QuarryMiningEngine {
                 base.diggingMode(),
                 breakTool,
                 base.voidFilteredDrops(),
-                base.itemDenyFilters());
+                base.itemDenyFilters(),
+                base.fluidRules());
     }
 
     private void ensureQueue(Level level) {

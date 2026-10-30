@@ -84,8 +84,9 @@ configurations {
 }
 
 dependencies {
-    implementation "curse.maven:iskanderts-library-1516512:8195543"
-    localRuntime "curse.maven:iskanderts-library-1516512:8195543"
+    implementation "curse.maven:iskanderts-library-1516512:9358042"
+    localRuntime "curse.maven:iskanderts-library-1516512:9358042"
+    implementation "curse.maven:another-config-manager-1719301:9018479"
 
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
     localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"

@@ -6,11 +6,16 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.unfamily.another_quarries.AnotherQuarries;
-import net.unfamily.another_quarries.network.InteractionHandNetworking;
 import net.unfamily.another_quarries.client.gui.QuarryFilterModuleMenu;
 import net.unfamily.another_quarries.integration.anotherdynamics.QuarryFilterCopierCompat;
+import net.unfamily.another_quarries.item.QuarryFilterModuleData;
+import net.unfamily.another_quarries.mining.QuarryFluidFilterMatcher;
+import net.unfamily.another_quarries.network.InteractionHandNetworking;
+
+import java.util.function.UnaryOperator;
 
 public record QuarryFilterCopyToCopierC2SPacket(InteractionHand hand) implements CustomPacketPayload {
 
@@ -31,11 +36,30 @@ public record QuarryFilterCopyToCopierC2SPacket(InteractionHand hand) implements
             if (!(context.player() instanceof ServerPlayer player)) {
                 return;
             }
+            ItemStack module = player.getItemInHand(packet.hand());
+            if (!QuarryFilterModuleData.isListModule(module)) {
+                return;
+            }
             if (!(player.containerMenu instanceof QuarryFilterModuleMenu menu)
                     || menu.getEditHand() != packet.hand()) {
                 return;
             }
-            QuarryFilterCopierCompat.copyLinesToCopier(player, menu.getCompactServerDraft()).sendTo(player);
+            boolean pump = menu.isPumpVariant();
+            byte materialKind = pump
+                    ? QuarryFilterCopierCompat.MATERIAL_KIND_FLUID
+                    : QuarryFilterCopierCompat.MATERIAL_KIND_ITEM;
+            UnaryOperator<String> sanitizer = pump
+                    ? QuarryFluidFilterMatcher::sanitizeLine
+                    : QuarryFilterModuleData::sanitizeDestroyLine;
+            String successKey = pump
+                    ? "message.another_quarries.quarry.pump.copier.copied"
+                    : "message.another_quarries.quarry.filter.copier.copied";
+            QuarryFilterCopierCompat.CopyResult result = QuarryFilterCopierCompat.copyLinesToCopier(
+                    menu.copierSlotStack(), menu.getCompactServerDraft(), materialKind, sanitizer, successKey);
+            if (result.success()) {
+                menu.markCopierSlotChanged();
+            }
+            result.sendTo(player);
         });
     }
 }

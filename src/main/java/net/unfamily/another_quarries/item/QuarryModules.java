@@ -16,6 +16,7 @@ public enum QuarryModules {
     SILK_TOUCH(() -> ModItems.MODULE_SILK_TOUCH.get(), "module_silktouch"),
     FORTUNE(() -> ModItems.MODULE_FORTUNE.get(), "module_fortune"),
     FILTER(() -> ModItems.MODULE_FILTER.get(), "module_filter"),
+    PUMP(() -> ModItems.MODULE_PUMP.get(), "module_pump"),
     ENCHANT(() -> ModItems.MODULE_ENCHANT.get(), "module_enchant");
 
     private final DeferredItemRef itemRef;

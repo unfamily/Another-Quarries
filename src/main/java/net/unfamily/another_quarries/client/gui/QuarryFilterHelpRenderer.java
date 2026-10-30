@@ -17,6 +17,7 @@ public final class QuarryFilterHelpRenderer {
     private static final int EXAMPLE_HOVER_COLOR = 0xFF0066FF;
 
     private static final String PREFIX = "gui.another_quarries.quarry.filter.help.";
+    private static final String PUMP_PREFIX = "gui.another_quarries.quarry.pump.help.";
 
     private QuarryFilterHelpRenderer() {}
 
@@ -47,17 +48,30 @@ public final class QuarryFilterHelpRenderer {
     }
 
     public static void render(GuiGraphics graphics, Font font, int panelMouseX, int panelMouseY, Frame frame) {
+        render(graphics, font, panelMouseX, panelMouseY, frame, false);
+    }
+
+    public static void render(
+            GuiGraphics graphics, Font font, int panelMouseX, int panelMouseY, Frame frame, boolean pump) {
         frame.clearExamples();
+        String prefix = pump ? PUMP_PREFIX : PREFIX;
         int titleBaseline = QuarryFilterGuiLayout.TITLE_Y;
         int lineStep = font.lineHeight + 4;
         int helpY = titleBaseline + font.lineHeight + GAP_BELOW_TITLE;
-        helpY = renderLine(graphics, font, panelMouseX, panelMouseY, frame, PREFIX + "id", helpY);
+        helpY = renderLine(graphics, font, panelMouseX, panelMouseY, frame, prefix + "id", helpY);
         helpY += lineStep;
-        helpY = renderLine(graphics, font, panelMouseX, panelMouseY, frame, PREFIX + "modid", helpY);
+        helpY = renderLine(graphics, font, panelMouseX, panelMouseY, frame, prefix + "modid", helpY);
         helpY += lineStep;
-        helpY = renderLine(graphics, font, panelMouseX, panelMouseY, frame, PREFIX + "tag", helpY);
+        helpY = renderLine(graphics, font, panelMouseX, panelMouseY, frame, prefix + "tag", helpY);
         helpY += lineStep;
-        renderLine(graphics, font, panelMouseX, panelMouseY, frame, PREFIX + "plain", helpY);
+        helpY = renderLine(graphics, font, panelMouseX, panelMouseY, frame, prefix + "plain", helpY);
+        if (pump) {
+            helpY += lineStep;
+            renderLine(graphics, font, panelMouseX, panelMouseY, frame, prefix + "anything_else", helpY);
+        } else {
+            helpY += lineStep;
+            renderLine(graphics, font, panelMouseX, panelMouseY, frame, prefix + "fluids", helpY);
+        }
     }
 
     public static void renderExampleTooltip(GuiGraphics graphics, Font font, Frame frame, int mouseX, int mouseY, int leftPos, int topPos) {

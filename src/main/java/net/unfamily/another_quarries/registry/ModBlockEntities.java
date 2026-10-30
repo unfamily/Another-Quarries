@@ -36,6 +36,10 @@ public final class ModBlockEntities {
                     Capabilities.ItemHandler.BLOCK,
                     QUARRY_BE.get(),
                     (be, side) -> be.getCombinedItemHandler());
+            event.registerBlockEntity(
+                    Capabilities.FluidHandler.BLOCK,
+                    QUARRY_BE.get(),
+                    (be, side) -> be.getFluidHandler());
         }
     }
 

@@ -7,6 +7,7 @@ import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.unfamily.another_quarries.item.QuarryFilterModuleData;
 import net.unfamily.another_quarries.network.InteractionHandNetworking;
 import net.unfamily.another_quarries.network.ModNetworking;
 
@@ -17,10 +18,13 @@ public final class QuarryFilterModuleMenus {
         if (!QuarryFilterModuleMenu.isValidHandStack(player, hand)) {
             return;
         }
+        boolean pump = QuarryFilterModuleData.isPumpModule(player.getItemInHand(hand));
         player.openMenu(new MenuProvider() {
             @Override
             public Component getDisplayName() {
-                return Component.translatable("gui.another_quarries.quarry.filter.title");
+                return Component.translatable(pump
+                        ? "gui.another_quarries.quarry.pump.title"
+                        : "gui.another_quarries.quarry.filter.title");
             }
 
             @Override

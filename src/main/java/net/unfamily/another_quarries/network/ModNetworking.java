@@ -11,8 +11,8 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.client.gui.QuarryFilterModuleMenu;
 import net.unfamily.another_quarries.item.QuarryFilterModuleData;
+import net.unfamily.another_quarries.network.packet.AreaBorderPreviewS2CPayload;
 import net.unfamily.another_quarries.network.packet.ClearPreviewForOwnerS2CPayload;
-import net.unfamily.another_quarries.network.packet.PreviewMarkerS2CPayload;
 import net.unfamily.another_quarries.network.packet.QuarryDiggingModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryFilterBulkSyncS2CPayload;
 import net.unfamily.another_quarries.network.packet.QuarryFilterCopyToCopierC2SPacket;
@@ -21,6 +21,7 @@ import net.unfamily.another_quarries.network.packet.QuarryFilterPasteFromCopierC
 import net.unfamily.another_quarries.network.packet.QuarryFilterRequestSyncC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryPreviewToggleC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRebootC2SPacket;
+import net.unfamily.another_quarries.network.packet.QuarryTankDumpC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRedstoneModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarrySizeC2SPacket;
 
@@ -39,18 +40,21 @@ public final class ModNetworking {
         registrar.playToServer(QuarryDiggingModeC2SPacket.TYPE, QuarryDiggingModeC2SPacket.STREAM_CODEC, QuarryDiggingModeC2SPacket::handle);
         registrar.playToServer(QuarryRedstoneModeC2SPacket.TYPE, QuarryRedstoneModeC2SPacket.STREAM_CODEC, QuarryRedstoneModeC2SPacket::handle);
         registrar.playToServer(QuarryRebootC2SPacket.TYPE, QuarryRebootC2SPacket.STREAM_CODEC, QuarryRebootC2SPacket::handle);
+        registrar.playToServer(QuarryTankDumpC2SPacket.TYPE, QuarryTankDumpC2SPacket.STREAM_CODEC, QuarryTankDumpC2SPacket::handle);
         registrar.playToServer(QuarryFilterLineUpdateC2SPacket.TYPE, QuarryFilterLineUpdateC2SPacket.STREAM_CODEC, QuarryFilterLineUpdateC2SPacket::handle);
         registrar.playToServer(QuarryFilterRequestSyncC2SPacket.TYPE, QuarryFilterRequestSyncC2SPacket.STREAM_CODEC, QuarryFilterRequestSyncC2SPacket::handle);
         registrar.playToServer(QuarryFilterCopyToCopierC2SPacket.TYPE, QuarryFilterCopyToCopierC2SPacket.STREAM_CODEC, QuarryFilterCopyToCopierC2SPacket::handle);
         registrar.playToServer(QuarryFilterPasteFromCopierC2SPacket.TYPE, QuarryFilterPasteFromCopierC2SPacket.STREAM_CODEC, QuarryFilterPasteFromCopierC2SPacket::handle);
 
-        registrar.playToClient(PreviewMarkerS2CPayload.TYPE, PreviewMarkerS2CPayload.STREAM_CODEC, PreviewMarkerS2CPayload::handle);
+        registrar.playToClient(AreaBorderPreviewS2CPayload.TYPE, AreaBorderPreviewS2CPayload.STREAM_CODEC, AreaBorderPreviewS2CPayload::handle);
         registrar.playToClient(ClearPreviewForOwnerS2CPayload.TYPE, ClearPreviewForOwnerS2CPayload.STREAM_CODEC, ClearPreviewForOwnerS2CPayload::handle);
         registrar.playToClient(QuarryFilterBulkSyncS2CPayload.TYPE, QuarryFilterBulkSyncS2CPayload.STREAM_CODEC, QuarryFilterBulkSyncS2CPayload::handle);
     }
 
-    public static void sendPreviewMarker(ServerPlayer player, BlockPos builderOrigin, BlockPos pos, int color, int durationTicks) {
-        PacketDistributor.sendToPlayer(player, new PreviewMarkerS2CPayload(builderOrigin, pos, color, durationTicks));
+    public static void sendAreaBorderPreview(
+            ServerPlayer player, BlockPos owner, BlockPos corner1, BlockPos corner2, int color, int durationTicks) {
+        PacketDistributor.sendToPlayer(
+                player, new AreaBorderPreviewS2CPayload(owner, corner1, corner2, color, durationTicks));
     }
 
     public static void clearPreviewForBuilder(ServerPlayer player, BlockPos builderOrigin) {

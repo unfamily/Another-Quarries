@@ -21,6 +21,11 @@ public final class ModDataComponents {
                     .persistent(Codec.list(Codec.STRING))
                     .networkSynchronized(ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8)));
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<List<String>>> DRAIN_FILTERS =
+            DATA_COMPONENTS.registerComponentType("drain_filters", builder -> builder
+                    .persistent(Codec.list(Codec.STRING))
+                    .networkSynchronized(ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8)));
+
     public static void register(IEventBus bus) {
         DATA_COMPONENTS.register(bus);
     }

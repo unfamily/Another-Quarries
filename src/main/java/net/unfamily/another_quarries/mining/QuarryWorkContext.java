@@ -17,5 +17,6 @@ public record QuarryWorkContext(
         QuarryDiggingMode diggingMode,
         ItemStack breakTool,
         boolean voidFilteredDrops,
-        List<String> itemDenyFilters) {
+        List<String> itemDenyFilters,
+        QuarryFluidRules fluidRules) {
 }

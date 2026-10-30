@@ -18,9 +18,14 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.energy.EnergyStorage;
 import net.neoforged.neoforge.energy.IEnergyStorage;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.unfamily.another_quarries.client.gui.QuarryMenu;
@@ -30,6 +35,8 @@ import net.unfamily.another_quarries.item.QuarryFilterModuleData;
 import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.mining.QuarryChunkTickets;
 import net.unfamily.another_quarries.mining.QuarryDrillAssigner;
+import net.unfamily.another_quarries.mining.QuarryFluidFilterMatcher;
+import net.unfamily.another_quarries.mining.QuarryFluidRules;
 import net.unfamily.another_quarries.mining.QuarryMiningEngine;
 import net.unfamily.another_quarries.mining.QuarryOutputHandler;
 import net.unfamily.another_quarries.registry.ModBlockEntities;
@@ -44,8 +51,11 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 import java.util.List;
 
-public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
+public class QuarryBlockEntity extends BlockEntity implements MenuProvider, QuarryFluidRules.Sink {
     public static final int BUFFER_SLOT_COUNT = 27;
+    /** Internal fluid tanks filled by the pump module (left-upper, right-upper, left-lower, right-lower). */
+    public static final int TANK_COUNT = 4;
+    public static final int TANK_CAPACITY_MB = 8000;
     public static int equipmentSlotCount() {
         return QuarryEquipmentSlots.slotCount();
     }
@@ -83,6 +93,8 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private final QuarryBufferHandler bufferHandler;
     private final ItemStackHandler equipmentHandler;
     private final EnergyStorageImpl energyStorage;
+    private final FluidTank[] tanks = new FluidTank[TANK_COUNT];
+    private final IFluidHandler fluidHandler;
     private final QuarryMiningEngine miningEngine;
     private final LongOpenHashSet forcedMiningChunks = new LongOpenHashSet();
 
@@ -116,6 +128,15 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         };
         int initialCapacity = ModConfig.resolveEnergyBufferCapacity(peakRfPerTick());
         this.energyStorage = new EnergyStorageImpl(initialCapacity, initialCapacity, initialCapacity);
+        for (int i = 0; i < TANK_COUNT; i++) {
+            tanks[i] = new FluidTank(TANK_CAPACITY_MB) {
+                @Override
+                protected void onContentsChanged() {
+                    setChanged();
+                }
+            };
+        }
+        this.fluidHandler = new ExtractOnlyFluidHandler(tanks);
         this.miningEngine = new QuarryMiningEngine(this);
     }
 
@@ -145,11 +166,101 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public IItemHandler getCombinedItemHandler() {
-        return bufferHandler;
+        return new ExtractOnlyItemHandler(bufferHandler);
     }
 
     public IItemHandler getBufferItemHandler() {
         return bufferHandler;
+    }
+
+    /** External fluid capability: extract only, tanks are filled by mining. */
+    public IFluidHandler getFluidHandler() {
+        return fluidHandler;
+    }
+
+    public FluidTank getTank(int index) {
+        return tanks[index];
+    }
+
+    public int getTankAmount(int index) {
+        return index >= 0 && index < TANK_COUNT ? tanks[index].getFluidAmount() : 0;
+    }
+
+    public int getTankCapacity(int index) {
+        return index >= 0 && index < TANK_COUNT ? tanks[index].getCapacity() : 0;
+    }
+
+    /** Registry id of the fluid in the tank, or -1 when empty. */
+    public int getTankFluidId(int index) {
+        if (index < 0 || index >= TANK_COUNT || tanks[index].getFluid().isEmpty()) {
+            return -1;
+        }
+        return BuiltInRegistries.FLUID.getId(tanks[index].getFluid().getFluid());
+    }
+
+    /** Server: discards all fluid in one tank (GUI dump button). @return true if any fluid was removed */
+    public boolean dumpTank(int index) {
+        if (level == null || level.isClientSide() || index < 0 || index >= TANK_COUNT) {
+            return false;
+        }
+        if (tanks[index].getFluid().isEmpty()) {
+            return false;
+        }
+        tanks[index].setFluid(FluidStack.EMPTY);
+        setChanged();
+        return true;
+    }
+
+    @Override
+    public boolean canAccept(Fluid fluid, int amountMb) {
+        return findTankFor(fluid, amountMb) >= 0;
+    }
+
+    @Override
+    public boolean accept(Fluid fluid, int amountMb) {
+        int index = findTankFor(fluid, amountMb);
+        if (index < 0) {
+            return false;
+        }
+        FluidStack stack = new FluidStack(fluid, amountMb);
+        return tanks[index].fill(stack, IFluidHandler.FluidAction.EXECUTE) == amountMb;
+    }
+
+    /** Prefers a tank already holding this fluid; otherwise the first empty tank. */
+    private int findTankFor(Fluid fluid, int amountMb) {
+        if (fluid == null || fluid == Fluids.EMPTY || amountMb <= 0) {
+            return -1;
+        }
+        for (int i = 0; i < TANK_COUNT; i++) {
+            FluidStack content = tanks[i].getFluid();
+            if (!content.isEmpty() && content.getFluid() == fluid
+                    && tanks[i].getCapacity() - content.getAmount() >= amountMb) {
+                return i;
+            }
+        }
+        for (int i = 0; i < TANK_COUNT; i++) {
+            if (tanks[i].getFluid().isEmpty() && tanks[i].getCapacity() >= amountMb) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Snapshot of how this quarry treats source fluids (filter void list first, then pump drain list). */
+    public QuarryFluidRules createFluidRules() {
+        // Destroy list must not treat &anything_else as void-all (pump drain only).
+        List<String> voidFilters = getActiveItemDenyFilters().stream()
+                .filter(line -> line != null && !line.isBlank() && !QuarryFluidFilterMatcher.isAnythingElseLine(line))
+                .toList();
+        boolean voidEnabled = !voidFilters.isEmpty();
+        boolean pump = QuarryEquipmentSlots.hasPumpModule(equipmentHandler);
+        List<String> drain = pump
+                ? QuarryFilterModuleData.getDrainList(equipmentHandler.getStackInSlot(QuarryEquipmentSlots.pumpModuleSlot()))
+                : List.of();
+        if (!voidEnabled && (!pump || drain.isEmpty())) {
+            return QuarryFluidRules.NONE;
+        }
+        return new QuarryFluidRules(voidEnabled, voidFilters, pump, drain, this);
     }
 
     public int getEnergyStoredDisplay() {
@@ -286,7 +397,10 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         }
     }
 
-    /** Direction: 0=up, 1=left, 2=right, 3=depth. */
+    /**
+     * Direction: 0=up, 1=left (sizeRight), 2=right (sizeLeft), 3=depth,
+     * 4=offset toward left («), 5=offset toward right (»).
+     */
     public void adjustSize(int direction, boolean increment, int amount) {
         int delta = increment ? amount : -amount;
         switch (direction) {
@@ -300,11 +414,33 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
                 sizeLeft = newL;
             }
             case 3 -> sizeDepth = Math.max(MIN_HEIGHT_OR_DEPTH, Math.min(getMaxDepth(), sizeDepth + delta));
+            case 4 -> offsetWidth(delta);
+            case 5 -> offsetWidth(-delta);
             default -> {}
         }
         miningEngine.invalidateQueue();
         miningEngine.invalidateFrame();
         setChanged();
+    }
+
+    /** Shift L/R balance: +amount adds to sizeLeft and removes from sizeRight (total width unchanged). */
+    public void offsetWidth(int amountTowardLeft) {
+        if (amountTowardLeft == 0) {
+            return;
+        }
+        int total = sizeLeft + sizeRight;
+        int newLeft = Math.max(0, Math.min(total, sizeLeft + amountTowardLeft));
+        sizeLeft = newLeft;
+        sizeRight = total - sizeLeft;
+    }
+
+    /** True when a pump is installed but its drain list has no configured fluids. */
+    public boolean isPumpDrainListEmpty() {
+        if (!QuarryEquipmentSlots.hasPumpModule(equipmentHandler)) {
+            return false;
+        }
+        return !QuarryFilterModuleData.hasConfiguredLines(
+                equipmentHandler.getStackInSlot(QuarryEquipmentSlots.pumpModuleSlot()));
     }
 
     public void requestFullReboot() {
@@ -313,12 +449,34 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public int estimatedRfPerBlock() {
+        var registries = level != null ? level.registryAccess() : null;
+        ItemStackHandler equipment = equipmentHandler;
+        ItemStack enchantStack = equipment.getStackInSlot(QuarryEquipmentSlots.enchantModuleSlot());
+        boolean enchantModule = enchantStack.is(ModItems.MODULE_ENCHANT.get());
+        boolean filterModule = QuarryEquipmentSlots.hasFilterModule(equipment);
+        boolean pumpModule = QuarryEquipmentSlots.hasPumpModule(equipment);
+        if (enchantModule && registries != null) {
+            return ModConfig.totalRfPerBlock(
+                    QuarryEquipmentSlots.diggerModuleCount(equipment),
+                    QuarryEquipmentSlots.speedModuleCount(equipment),
+                    0,
+                    false,
+                    filterModule,
+                    pumpModule,
+                    QuarryEquipmentSlots.rawEnchantModuleFortuneLevel(equipment, registries),
+                    QuarryEquipmentSlots.rawEnchantModuleSilkTouch(equipment, registries),
+                    QuarryDrillAssigner.resolveDrill(equipment));
+        }
         return ModConfig.totalRfPerBlock(
-                QuarryEquipmentSlots.diggerModuleCount(equipmentHandler),
-                QuarryEquipmentSlots.speedModuleCount(equipmentHandler),
-                QuarryEquipmentSlots.fortuneLevel(equipmentHandler),
-                QuarryEquipmentSlots.hasSilkTouch(equipmentHandler),
-                QuarryDrillAssigner.resolveDrill(equipmentHandler));
+                QuarryEquipmentSlots.diggerModuleCount(equipment),
+                QuarryEquipmentSlots.speedModuleCount(equipment),
+                QuarryEquipmentSlots.fortuneLevel(equipment, registries),
+                QuarryEquipmentSlots.hasSilkTouch(equipment, registries),
+                filterModule,
+                pumpModule,
+                0,
+                false,
+                QuarryDrillAssigner.resolveDrill(equipment));
     }
 
     public void openMenu(Player player) {
@@ -353,6 +511,9 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     public boolean canWork() {
+        if (isPumpDrainListEmpty()) {
+            return false;
+        }
         if (level == null || level.isClientSide()) {
             return getRedstoneMode() == 0;
         }
@@ -454,6 +615,13 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         tag.putInt("EquipmentVersion", QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION);
         tag.put("Buffer", bufferHandler.serializeNBT(registries));
         tag.put("Equipment", equipmentHandler.serializeNBT(registries));
+        for (int i = 0; i < TANK_COUNT; i++) {
+            if (!tanks[i].getFluid().isEmpty()) {
+                CompoundTag tankTag = new CompoundTag();
+                tanks[i].writeToNBT(registries, tankTag);
+                tag.put("Tank" + i, tankTag);
+            }
+        }
         CompoundTag miningTag = new CompoundTag();
         miningEngine.save(miningTag, registries);
         tag.put("MiningEngine", miningTag);
@@ -473,13 +641,19 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         previousCanWork = tag.getBoolean("PreviousCanWork");
         energyStorage.setEnergy(tag.contains("Energy") ? tag.getInt("Energy") : 0);
         int equipmentVersion = tag.contains("EquipmentVersion") ? tag.getInt("EquipmentVersion") : 1;
-        if (equipmentVersion < QuarryEquipmentSlots.EQUIPMENT_LAYOUT_VERSION) {
+        if (equipmentVersion < LAST_RESIZE_FREE_LAYOUT_VERSION) {
             migrateLegacyEquipment(tag, equipmentHandler, equipmentVersion, registries);
         } else {
-            loadHandlerSlots(tag, "Equipment", equipmentHandler, registries);
+            loadEquipmentSlots(tag, equipmentHandler, registries);
         }
         loadHandlerSlots(tag, "Buffer", bufferHandler, registries);
         migrateRemovedDrills(equipmentHandler);
+        for (int i = 0; i < TANK_COUNT; i++) {
+            tanks[i].setFluid(FluidStack.EMPTY);
+            if (tag.contains("Tank" + i, Tag.TAG_COMPOUND)) {
+                tanks[i].readFromNBT(registries, tag.getCompound("Tank" + i));
+            }
+        }
         if (tag.contains("MiningEngine", Tag.TAG_COMPOUND)) {
             miningEngine.load(tag.getCompound("MiningEngine"), registries);
         }
@@ -487,6 +661,28 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         if (level != null && !level.isClientSide()) {
             previousCanWork = canWork();
         }
+    }
+
+    /** Layouts from this version on only append slots, so saved equipment can be loaded by absolute slot index. */
+    private static final int LAST_RESIZE_FREE_LAYOUT_VERSION = 5;
+
+    /** Loads equipment by slot index without letting the saved size shrink the handler (newer layouts add slots). */
+    private static void loadEquipmentSlots(CompoundTag tag, ItemStackHandler handler, HolderLookup.Provider registries) {
+        for (int i = 0; i < handler.getSlots(); i++) {
+            handler.setStackInSlot(i, ItemStack.EMPTY);
+        }
+        if (tag.contains("Equipment", Tag.TAG_COMPOUND)) {
+            ListTag items = tag.getCompound("Equipment").getList("Items", Tag.TAG_COMPOUND);
+            for (int i = 0; i < items.size(); i++) {
+                CompoundTag entry = items.getCompound(i);
+                int slot = entry.getInt("Slot");
+                if (slot >= 0 && slot < handler.getSlots()) {
+                    handler.setStackInSlot(slot, ItemStack.parseOptional(registries, entry));
+                }
+            }
+            return;
+        }
+        loadHandlerSlots(tag, "Equipment", handler, registries);
     }
 
     private static void loadHandlerSlots(CompoundTag tag, String key, ItemStackHandler handler, HolderLookup.Provider registries) {
