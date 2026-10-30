@@ -30,7 +30,7 @@ import net.unfamily.another_quarries.network.packet.QuarryTankDumpC2SPacket;
 import net.unfamily.another_quarries.item.QuarryFilterModuleData;
 import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
-import net.unfamily.iskalib.client.marker.AreaBorderRenderer;
+import net.unfamily.another_quarries.client.QuarryFramePreviewRenderer;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -335,7 +335,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         }
         playButtonSound();
         boolean enabling = !menu.isPreviewEnabled();
-        AreaBorderRenderer.getInstance().clearArea(pos);
+        QuarryFramePreviewRenderer.getInstance().clearArea(pos);
         PacketDistributor.sendToServer(new QuarryPreviewToggleC2SPacket(pos, enabling));
         previewButtonShowsHide = enabling;
         updatePreviewButtonLabel();

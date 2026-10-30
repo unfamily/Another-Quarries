@@ -21,6 +21,7 @@ public final class StructureQuarryClientSetup {
     public static void onRegisterMenuScreens(RegisterMenuScreensEvent event) {
         event.register(ModMenuTypes.QUARRY_MENU.get(), QuarryScreen::new);
         event.register(ModMenuTypes.QUARRY_FILTER_MODULE_MENU.get(), QuarryFilterModuleScreen::new);
+        QuarryFramePreviewClientHooks.registerIfNeeded();
     }
 
     @SubscribeEvent
