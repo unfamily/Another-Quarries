@@ -12,16 +12,23 @@ public final class QuarryFilterGuiLayout {
     public static final int FIRST_FILTER_ROW_Y = 32;
     public static final int VISIBLE_FILTER_ENTRIES = 4;
 
-    public static final int SCROLLBAR_WIDTH = 8;
-    public static final int SCROLLBAR_HEIGHT = 34;
-    public static final int HANDLE_SIZE = 8;
-    public static final int SCROLLBAR_TEXTURE_WIDTH = 32;
-    public static final int SCROLLBAR_TEXTURE_HEIGHT = 34;
+    /** {@code scroller.png} thumb width (AD / Colossal Reactors style). */
+    public static final int SCROLLER_WIDTH = 12;
+    /** {@code scroller.png} thumb height. */
+    public static final int SCROLLER_HEIGHT = 15;
+    public static final int SCROLL_ARROW = 12;
+    public static final int SCROLL_ARROW_TRACK_GAP = 4;
+    public static final int SCROLL_TRACK_COLOR = 0xFF000000;
 
     public static final int SCROLLBAR_X_REL = ENTRY_X + ENTRY_WIDTH + 4;
+    private static final int FILTER_LIST_BOTTOM_Y =
+            FIRST_FILTER_ROW_Y + VISIBLE_FILTER_ENTRIES * ENTRY_HEIGHT;
     public static final int BUTTON_UP_Y_REL = FIRST_FILTER_ROW_Y;
-    public static final int SCROLLBAR_Y_REL = BUTTON_UP_Y_REL + HANDLE_SIZE;
-    public static final int BUTTON_DOWN_Y_REL = SCROLLBAR_Y_REL + SCROLLBAR_HEIGHT;
+    public static final int BUTTON_DOWN_Y_REL = FILTER_LIST_BOTTOM_Y - SCROLL_ARROW;
+    public static final int SCROLLBAR_Y_REL =
+            BUTTON_UP_Y_REL + SCROLL_ARROW + SCROLL_ARROW_TRACK_GAP;
+    public static final int SCROLLBAR_HEIGHT =
+            BUTTON_DOWN_Y_REL - SCROLL_ARROW_TRACK_GAP - SCROLLBAR_Y_REL;
 
     public static final int SLOT_GEOMETRY_NUDGE = 2;
     public static final int SLOT_COPY_BACKGROUND_X = 278 + SLOT_GEOMETRY_NUDGE;

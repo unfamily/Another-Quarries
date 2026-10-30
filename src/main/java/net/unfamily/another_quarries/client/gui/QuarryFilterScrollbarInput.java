@@ -26,17 +26,17 @@ public final class QuarryFilterScrollbarInput {
         int gx = leftPos;
         int gy = topPos;
         if (mouseX >= gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL
-                && mouseX < gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL + QuarryFilterGuiLayout.SCROLLBAR_WIDTH
+                && mouseX < gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL + QuarryFilterGuiLayout.SCROLLER_WIDTH
                 && mouseY >= gy + QuarryFilterGuiLayout.BUTTON_UP_Y_REL
-                && mouseY < gy + QuarryFilterGuiLayout.BUTTON_UP_Y_REL + QuarryFilterGuiLayout.HANDLE_SIZE) {
+                && mouseY < gy + QuarryFilterGuiLayout.BUTTON_UP_Y_REL + QuarryFilterGuiLayout.SCROLL_ARROW) {
             if (scrollUpSilent(maxLines, scrollOffset, setOffset)) {
                 return true;
             }
         }
         if (mouseX >= gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL
-                && mouseX < gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL + QuarryFilterGuiLayout.SCROLLBAR_WIDTH
+                && mouseX < gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL + QuarryFilterGuiLayout.SCROLLER_WIDTH
                 && mouseY >= gy + QuarryFilterGuiLayout.BUTTON_DOWN_Y_REL
-                && mouseY < gy + QuarryFilterGuiLayout.BUTTON_DOWN_Y_REL + QuarryFilterGuiLayout.HANDLE_SIZE) {
+                && mouseY < gy + QuarryFilterGuiLayout.BUTTON_DOWN_Y_REL + QuarryFilterGuiLayout.SCROLL_ARROW) {
             if (scrollDownSilent(maxLines, scrollOffset, setOffset)) {
                 return true;
             }
@@ -53,12 +53,12 @@ public final class QuarryFilterScrollbarInput {
         int gx = leftPos;
         int gy = topPos;
         double scrollRatio = (double) scrollOffset / maxScroll;
-        int handleY = gy + QuarryFilterGuiLayout.SCROLLBAR_Y_REL
-                + (int) (scrollRatio * (QuarryFilterGuiLayout.SCROLLBAR_HEIGHT - QuarryFilterGuiLayout.HANDLE_SIZE));
+        int handleRange = Math.max(0, QuarryFilterGuiLayout.SCROLLBAR_HEIGHT - QuarryFilterGuiLayout.SCROLLER_HEIGHT);
+        int handleY = gy + QuarryFilterGuiLayout.SCROLLBAR_Y_REL + (int) (scrollRatio * handleRange);
         if (mouseX >= gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL
-                && mouseX < gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL + QuarryFilterGuiLayout.HANDLE_SIZE
+                && mouseX < gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL + QuarryFilterGuiLayout.SCROLLER_WIDTH
                 && mouseY >= handleY
-                && mouseY < handleY + QuarryFilterGuiLayout.HANDLE_SIZE) {
+                && mouseY < handleY + QuarryFilterGuiLayout.SCROLLER_HEIGHT) {
             draggingHandle = true;
             dragStartY = (int) mouseY;
             dragStartScrollOffset = scrollOffset;
@@ -75,7 +75,7 @@ public final class QuarryFilterScrollbarInput {
         int gx = leftPos;
         int gy = topPos;
         if (mouseX >= gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL
-                && mouseX < gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL + QuarryFilterGuiLayout.SCROLLBAR_WIDTH
+                && mouseX < gx + QuarryFilterGuiLayout.SCROLLBAR_X_REL + QuarryFilterGuiLayout.SCROLLER_WIDTH
                 && mouseY >= gy + QuarryFilterGuiLayout.SCROLLBAR_Y_REL
                 && mouseY < gy + QuarryFilterGuiLayout.SCROLLBAR_Y_REL + QuarryFilterGuiLayout.SCROLLBAR_HEIGHT) {
             float clickRatio = (float) (mouseY - (gy + QuarryFilterGuiLayout.SCROLLBAR_Y_REL))
@@ -100,7 +100,8 @@ public final class QuarryFilterScrollbarInput {
             return false;
         }
         int deltaY = (int) mouseY - dragStartY;
-        float scrollRatio = (float) deltaY / (QuarryFilterGuiLayout.SCROLLBAR_HEIGHT - QuarryFilterGuiLayout.HANDLE_SIZE);
+        float scrollRatio = (float) deltaY
+                / (QuarryFilterGuiLayout.SCROLLBAR_HEIGHT - QuarryFilterGuiLayout.SCROLLER_HEIGHT);
         int newOffset = dragStartScrollOffset + (int) (scrollRatio * maxScroll);
         setOffset.set(newOffset);
         return true;
