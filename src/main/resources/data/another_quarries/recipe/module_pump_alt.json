@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "BAB",
+    "ACA",
+    "BAB"
+  ],
+  "key": {
+    "A": "#c:ingots/iron",
+    "B": "#c:dusts/redstone",
+    "C": "another_quarries:module_base"
+  },
+  "result": {
+    "id": "another_quarries:module_pump",
+    "count": 1
+  }
+}

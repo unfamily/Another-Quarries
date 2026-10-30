@@ -8,6 +8,7 @@ import net.minecraft.world.phys.AABB;
 import net.unfamily.another_quarries.block.QuarryBlock;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.network.ModNetworking;
+import net.unfamily.iskalib.client.marker.AreaBorderRenderer;
 
 public final class QuarryPreview {
     private QuarryPreview() {}
@@ -29,36 +30,17 @@ public final class QuarryPreview {
         int minX = (int) Math.floor(aabb.minX);
         int minY = (int) Math.floor(aabb.minY);
         int minZ = (int) Math.floor(aabb.minZ);
-        int maxX = (int) Math.floor(aabb.maxX);
-        int maxY = (int) Math.floor(aabb.maxY);
-        int maxZ = (int) Math.floor(aabb.maxZ);
+        // AABB max is exclusive (+1); AreaBorderRenderer expects inclusive block corners
+        int maxX = (int) Math.floor(aabb.maxX) - 1;
+        int maxY = (int) Math.floor(aabb.maxY) - 1;
+        int maxZ = (int) Math.floor(aabb.maxZ) - 1;
 
-        int color = 0x80FF00FF;
-        int durationTicks = 0;
-
-        for (int x = minX; x < maxX; x++) {
-            for (int z = minZ; z < maxZ; z++) {
-                if (x == minX || x == maxX - 1 || z == minZ || z == maxZ - 1) {
-                    ModNetworking.sendPreviewMarker(player, quarryPos, new BlockPos(x, maxY - 1, z), color, durationTicks);
-                    ModNetworking.sendPreviewMarker(player, quarryPos, new BlockPos(x, minY, z), color, durationTicks);
-                }
-            }
-        }
-        for (int x = minX; x < maxX; x++) {
-            for (int y = minY; y < maxY; y++) {
-                if (x == minX || x == maxX - 1 || y == minY || y == maxY - 1) {
-                    ModNetworking.sendPreviewMarker(player, quarryPos, new BlockPos(x, y, minZ), color, durationTicks);
-                    ModNetworking.sendPreviewMarker(player, quarryPos, new BlockPos(x, y, maxZ - 1), color, durationTicks);
-                }
-            }
-        }
-        for (int z = minZ; z < maxZ; z++) {
-            for (int y = minY; y < maxY; y++) {
-                if (z == minZ || z == maxZ - 1 || y == minY || y == maxY - 1) {
-                    ModNetworking.sendPreviewMarker(player, quarryPos, new BlockPos(minX, y, z), color, durationTicks);
-                    ModNetworking.sendPreviewMarker(player, quarryPos, new BlockPos(maxX - 1, y, z), color, durationTicks);
-                }
-            }
-        }
+        ModNetworking.sendAreaBorderPreview(
+                player,
+                quarryPos,
+                new BlockPos(minX, minY, minZ),
+                new BlockPos(maxX, maxY, maxZ),
+                AreaBorderRenderer.DEFAULT_MACHINE_COLOR,
+                0);
     }
 }

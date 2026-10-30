@@ -81,8 +81,27 @@ public final class QuarryFilterGuiLayout {
         return FIRST_FILTER_ROW_Y + VISIBLE_FILTER_ENTRIES * ENTRY_HEIGHT + EDIT_MODE_GAP_BELOW_LIST;
     }
 
-    /** X of Back / Valid keys row (aligned with edit-mode advanced button slot in AD). */
+    /** X of Back / Valid keys row (after arrows; optionally after Convert like Sequential Buffer). */
     public static int navBackButtonX() {
+        return navBackButtonX(false);
+    }
+
+    public static int navBackButtonX(boolean withConvertButton) {
+        int buttonSize = ROW_BUTTON_SIZE;
+        int buttonSpacing = ROW_BUTTON_SPACING;
+        int slotSize = 18;
+        int rowLeft = ENTRY_X;
+        int slotX = rowLeft + buttonSize + buttonSpacing;
+        int rightArrowX = slotX + slotSize + buttonSpacing;
+        int x = rightArrowX + buttonSize + buttonSpacing;
+        if (withConvertButton) {
+            x += ROW_BUTTON_SIZE + ADJACENT_BTN_GAP;
+        }
+        return x;
+    }
+
+    /** X of the Convert (item→fluid) button in destroy-list edit mode. */
+    public static int convertButtonX() {
         int buttonSize = ROW_BUTTON_SIZE;
         int buttonSpacing = ROW_BUTTON_SPACING;
         int slotSize = 18;

@@ -12,6 +12,7 @@ import net.unfamily.another_quarries.item.DescribedItem;
 import net.unfamily.another_quarries.item.EnchantableQuarryModuleItem;
 import net.unfamily.another_quarries.item.QuarryFilterModuleItem;
 import net.unfamily.another_quarries.item.QuarryModules;
+import net.unfamily.another_quarries.item.QuarryPumpModuleItem;
 
 import java.util.function.UnaryOperator;
 
@@ -55,6 +56,12 @@ public final class ModItems {
                     props,
                     "tooltip.another_quarries.module_filter.desc0",
                     "tooltip.another_quarries.module_filter.desc1"),
+            UnaryOperator.identity());
+    public static final DeferredItem<Item> MODULE_PUMP = ITEMS.registerItem("module_pump",
+            props -> new QuarryPumpModuleItem(
+                    props,
+                    "tooltip.another_quarries.module_pump.desc0",
+                    "tooltip.another_quarries.module_pump.desc1"),
             UnaryOperator.identity());
     /** Must match {@link net.unfamily.another_quarries.config.ModConfig#defaultModuleEnchantability()}; config is not loaded at register time. */
     private static final int MODULE_ENCHANT_ENCHANTABILITY = 15;

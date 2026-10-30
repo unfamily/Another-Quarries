@@ -10,12 +10,16 @@ import net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPosition
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.neoforged.neoforge.fluids.FluidStack;
 import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.network.packet.QuarryDiggingModeC2SPacket;
@@ -23,12 +27,14 @@ import net.unfamily.another_quarries.network.packet.QuarryPreviewToggleC2SPacket
 import net.unfamily.another_quarries.network.packet.QuarryRebootC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarryRedstoneModeC2SPacket;
 import net.unfamily.another_quarries.network.packet.QuarrySizeC2SPacket;
+import net.unfamily.another_quarries.network.packet.QuarryTankDumpC2SPacket;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
+import net.unfamily.another_quarries.item.QuarryFilterModuleData;
 import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.util.QuarryDiggingMode;
-import net.unfamily.iskalib.client.marker.MarkRenderer;
+import net.unfamily.iskalib.client.marker.AreaBorderRenderer;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -78,6 +84,21 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
 
     private static final int DISABLED_SLOT_OVERLAY = 0xA0000000;
 
+    /**
+     * Tank frames baked into {@code quarry.png}: the fill area is 12x54 and the frame adds a 1px inset border.
+     * Index order: 0 left-upper, 1 right-upper, 2 left-lower, 3 right-lower. Coordinates are the frame origin.
+     */
+    private static final int TANK_FILL_WIDTH = 12;
+    private static final int TANK_FILL_HEIGHT = 54;
+    private static final int TANK_FILL_INSET = 1;
+    private static final int TANK_OUTER_W = TANK_FILL_WIDTH + 2 * TANK_FILL_INSET;
+    private static final int TANK_OUTER_H = TANK_FILL_HEIGHT + 2 * TANK_FILL_INSET;
+    private static final int[] TANK_BAR_X = {9, 197, 9, 197};
+    private static final int[] TANK_BAR_Y = {23, 23, 97, 97};
+    private static final int TANK_DUMP_W = 14;
+    private static final int TANK_DUMP_H = 12;
+    private static final int TANK_DUMP_GAP_BELOW = 3;
+
     private static final ItemStack GHOST_DRONE = new ItemStack(ModItems.DRONE.get());
     private static final ItemStack GHOST_DRILL = new ItemStack(ModItems.DRILL_DIAMOND.get());
     private static final ItemStack GHOST_DIGGER = new ItemStack(ModItems.MODULE_DIGGER.get());
@@ -89,12 +110,15 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     private Button closeButton;
     private Button rebootButton;
     private Button buttonUp;
+    private Button buttonOffsetLeft;
+    private Button buttonOffsetRight;
     private Button buttonLeft;
     private Button buttonRight;
     private Button buttonDepth;
     private Button buttonPreview;
     private Button diggingModeButton;
     private ItemIconButton redstoneButton;
+    private final Button[] tankDumpButtons = new Button[QuarryBlockEntity.TANK_COUNT];
     private boolean previewButtonShowsHide;
 
     public QuarryScreen(QuarryMenu menu, Inventory playerInventory, Component title) {
@@ -122,8 +146,14 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         addRenderableWidget(rebootButton);
 
         int upX = leftPos + ARROW_GROUP_LEFT_X + ARROW_GROUP_WIDTH / 2 - BUTTON_W / 2;
+        int offsetLeftX = upX - BUTTON_W - GAP;
+        int offsetRightX = upX + BUTTON_W + GAP;
         buttonUp = Button.builder(Component.literal("\u2191"), b -> sendSize(0, true))
                 .bounds(upX, topPos + ROW1_Y, BUTTON_W, BUTTON_H).build();
+        buttonOffsetLeft = Button.builder(Component.literal("\u00AB"), b -> sendSize(4, true))
+                .bounds(offsetLeftX, topPos + ROW1_Y, BUTTON_W, BUTTON_H).build();
+        buttonOffsetRight = Button.builder(Component.literal("\u00BB"), b -> sendSize(5, true))
+                .bounds(offsetRightX, topPos + ROW1_Y, BUTTON_W, BUTTON_H).build();
         buttonLeft = Button.builder(Component.literal("\u2190"), b -> sendSize(1, true))
                 .bounds(leftPos + ARROW_GROUP_LEFT_X, topPos + ROW2_Y, BUTTON_W, BUTTON_H).build();
         buttonDepth = Button.builder(Component.literal("-"), b -> sendSize(3, true))
@@ -131,6 +161,8 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         buttonRight = Button.builder(Component.literal("\u2192"), b -> sendSize(2, true))
                 .bounds(leftPos + ARROW_GROUP_LEFT_X + 2 * (BUTTON_W + GAP), topPos + ROW2_Y, BUTTON_W, BUTTON_H).build();
         addRenderableWidget(buttonUp);
+        addRenderableWidget(buttonOffsetLeft);
+        addRenderableWidget(buttonOffsetRight);
         addRenderableWidget(buttonLeft);
         addRenderableWidget(buttonDepth);
         addRenderableWidget(buttonRight);
@@ -146,6 +178,16 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
                 .bounds(leftPos + DIGGING_MODE_X, topPos + DIGGING_MODE_Y, DIGGING_MODE_W, BUTTON_H)
                 .build();
         addRenderableWidget(diggingModeButton);
+
+        for (int tank = 0; tank < QuarryBlockEntity.TANK_COUNT; tank++) {
+            final int tankIndex = tank;
+            int dumpX = leftPos + TANK_BAR_X[tank] + (TANK_OUTER_W - TANK_DUMP_W) / 2;
+            int dumpY = topPos + tankDumpY(tank);
+            Button dump = Button.builder(Component.literal("D"), b -> sendTankDump(tankIndex))
+                    .bounds(dumpX, dumpY, TANK_DUMP_W, TANK_DUMP_H).build();
+            dump.setTooltip(Tooltip.create(Component.translatable("gui.another_quarries.quarry.tank_dump.tooltip")));
+            tankDumpButtons[tank] = addRenderableWidget(dump);
+        }
 
         redstoneButton = addRenderableWidget(MachineGuiButtons.redstoneIconButton(
                 leftPos + REDSTONE_X, topPos + REDSTONE_Y, b -> sendRedstone(false), menu::getRedstoneMode, false));
@@ -171,6 +213,28 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
             updatePreviewButtonLabel();
         }
         updateDiggingModeButton();
+        updateTankDumpButtons();
+    }
+
+    private static int tankDumpY(int tank) {
+        return TANK_BAR_Y[tank] + TANK_OUTER_H + TANK_DUMP_GAP_BELOW;
+    }
+
+    private void updateTankDumpButtons() {
+        for (int tank = 0; tank < tankDumpButtons.length; tank++) {
+            if (tankDumpButtons[tank] != null) {
+                tankDumpButtons[tank].active = menu.getTankAmount(tank) > 0;
+            }
+        }
+    }
+
+    private void sendTankDump(int tank) {
+        BlockPos pos = menu.getSyncedBlockPos();
+        if (pos.equals(BlockPos.ZERO) || menu.getTankAmount(tank) <= 0) {
+            return;
+        }
+        ClientPacketDistributor.sendToServer(new QuarryTankDumpC2SPacket(pos, tank));
+        playButtonSound();
     }
 
     private void updateDiggingModeButton() {
@@ -218,6 +282,12 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (buttonUp != null) {
             buttonUp.setTooltip(tooltipWithValue("gui.another_quarries.quarry.tooltip.up_value", menu.getAreaHeight()));
         }
+        if (buttonOffsetLeft != null) {
+            buttonOffsetLeft.setTooltip(offsetTooltip("gui.another_quarries.quarry.tooltip.offset_left"));
+        }
+        if (buttonOffsetRight != null) {
+            buttonOffsetRight.setTooltip(offsetTooltip("gui.another_quarries.quarry.tooltip.offset_right"));
+        }
         if (buttonLeft != null) {
             buttonLeft.setTooltip(tooltipWithValue("gui.another_quarries.quarry.tooltip.left_value", menu.getSizeLeft()));
         }
@@ -227,6 +297,19 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (buttonDepth != null) {
             buttonDepth.setTooltip(tooltipWithValue("gui.another_quarries.quarry.tooltip.depth_value", menu.getAreaDepth()));
         }
+    }
+
+    private static Tooltip offsetTooltip(String key) {
+        Component full = Component.translatable(key)
+                .append(Component.literal("\n"))
+                .append(Component.translatable("gui.another_quarries.quarry.tooltip.left_click"))
+                .append(Component.literal("\n"))
+                .append(Component.translatable("gui.another_quarries.quarry.tooltip.right_click"))
+                .append(Component.literal("\n"))
+                .append(Component.translatable("gui.another_quarries.quarry.tooltip.shift_10"))
+                .append(Component.literal("\n"))
+                .append(Component.translatable("gui.another_quarries.quarry.tooltip.alt_ctrl_5"));
+        return Tooltip.create(full);
     }
 
     private int modifierStepAmount() {
@@ -260,7 +343,7 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         }
         playButtonSound();
         boolean enabling = !menu.isPreviewEnabled();
-        MarkRenderer.getInstance().clearBillboardMarkersForOwner(pos);
+        AreaBorderRenderer.getInstance().clearArea(pos);
         ClientPacketDistributor.sendToServer(new QuarryPreviewToggleC2SPacket(pos, enabling));
         previewButtonShowsHide = enabling;
         updatePreviewButtonLabel();
@@ -307,8 +390,33 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         super.extractBackground(guiGraphics, mouseX, mouseY, partialTick);
         guiGraphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, this.leftPos, this.topPos, 0.0F, 0.0F,
                 this.imageWidth, this.imageHeight, QuarryMenu.GUI_WIDTH, QuarryMenu.GUI_HEIGHT);
+        renderTankFluids(guiGraphics);
         renderGhostItems(guiGraphics);
         renderDisabledEquipmentSlots(guiGraphics);
+    }
+
+    private void renderTankFluids(GuiGraphicsExtractor guiGraphics) {
+        for (int tank = 0; tank < QuarryBlockEntity.TANK_COUNT; tank++) {
+            int amount = menu.getTankAmount(tank);
+            int capacity = menu.getTankCapacity(tank);
+            int fluidId = menu.getTankFluidId(tank);
+            if (capacity <= 0 || amount <= 0 || fluidId < 0) {
+                continue;
+            }
+            Fluid fluid = BuiltInRegistries.FLUID.byId(fluidId);
+            if (fluid == null || fluid == Fluids.EMPTY) {
+                continue;
+            }
+            int fillPixels = Math.min(TANK_FILL_HEIGHT, (TANK_FILL_HEIGHT * amount) / capacity);
+            if (fillPixels <= 0 && amount > 0) {
+                fillPixels = 1;
+            }
+            int fillLeft = leftPos + TANK_BAR_X[tank] + TANK_FILL_INSET;
+            int fillBottom = topPos + TANK_BAR_Y[tank] + TANK_FILL_INSET + TANK_FILL_HEIGHT;
+            FluidRenderHelper.drawFluidInTank(
+                    guiGraphics, new FluidStack(fluid, amount), fillLeft, fillBottom - fillPixels,
+                    TANK_FILL_WIDTH, fillPixels);
+        }
     }
 
     private void renderDisabledEquipmentSlots(GuiGraphicsExtractor guiGraphics) {
@@ -357,16 +465,27 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
     }
 
     private void renderChunksProgressLabel(GuiGraphicsExtractor guiGraphics) {
+        int centerX = this.leftPos + this.imageWidth / 2;
+        if (isPumpDrainListEmpty()) {
+            Component label = Component.translatable("gui.another_quarries.quarry.pump_no_fluids");
+            drawCenteredText(guiGraphics, label, centerX, this.topPos + CHUNKS_LABEL_Y, GuiTextColors.ERROR);
+            return;
+        }
         int total = menu.getTotalAreaChunkCount();
         if (total <= 1) {
             return;
         }
-        int centerX = this.leftPos + this.imageWidth / 2;
         Component label = Component.translatable(
                 "gui.another_quarries.quarry.chunks_progress",
                 menu.getProcessedAreaChunkCount(),
                 total);
         drawCenteredText(guiGraphics, label, centerX, this.topPos + CHUNKS_LABEL_Y, GuiTextColors.TITLE);
+    }
+
+    private boolean isPumpDrainListEmpty() {
+        Slot slot = menu.getSlot(QuarryMenu.pumpModuleMenuIndex());
+        ItemStack stack = slot.getItem();
+        return QuarryFilterModuleData.isPumpModule(stack) && !QuarryFilterModuleData.hasConfiguredLines(stack);
     }
 
     private void renderGhostItems(GuiGraphicsExtractor guiGraphics) {
@@ -432,10 +551,42 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
                     mouseY,
                     true);
         }
+        renderTankTooltips(guiGraphics, mouseX, mouseY);
         renderGhostTooltips(guiGraphics, mouseX, mouseY);
         if (redstoneButton != null && redstoneButton.isMouseOver(mouseX, mouseY)) {
             MachineGuiButtons.renderTooltipLine(guiGraphics, font, mouseX, mouseY,
                     MachineGuiButtons.redstoneTooltip(menu.getRedstoneMode(), false));
+        }
+    }
+
+    private void renderTankTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
+        for (int tank = 0; tank < QuarryBlockEntity.TANK_COUNT; tank++) {
+            int left = leftPos + TANK_BAR_X[tank] + TANK_FILL_INSET;
+            int top = topPos + TANK_BAR_Y[tank] + TANK_FILL_INSET;
+            if (mouseX < left || mouseX >= left + TANK_FILL_WIDTH || mouseY < top || mouseY >= top + TANK_FILL_HEIGHT) {
+                continue;
+            }
+            int amount = menu.getTankAmount(tank);
+            int capacity = menu.getTankCapacity(tank);
+            int fluidId = menu.getTankFluidId(tank);
+            List<Component> lines = new ArrayList<>();
+            lines.add(capacity > 0 && amount > 0
+                    ? Component.translatable("gui.another_quarries.quarry.tank_tooltip", amount, capacity)
+                    : Component.translatable("gui.another_quarries.quarry.tank_empty"));
+            if (fluidId >= 0) {
+                Fluid fluid = BuiltInRegistries.FLUID.byId(fluidId);
+                if (fluid != null && fluid != Fluids.EMPTY) {
+                    lines.add(Component.translatable(fluid.getFluidType().getDescriptionId()));
+                }
+            }
+            guiGraphics.setTooltipForNextFrame(
+                    this.font,
+                    lines.stream().map(Component::getVisualOrderText).toList(),
+                    DefaultTooltipPositioner.INSTANCE,
+                    mouseX,
+                    mouseY,
+                    true);
+            return;
         }
     }
 
@@ -483,6 +634,9 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
         if (equipmentSlot == QuarryEquipmentSlots.filterModuleSlot()) {
             return new ItemStack(ModItems.MODULE_FILTER.get());
         }
+        if (equipmentSlot == QuarryEquipmentSlots.pumpModuleSlot()) {
+            return new ItemStack(ModItems.MODULE_PUMP.get());
+        }
         return ItemStack.EMPTY;
     }
 
@@ -501,6 +655,14 @@ public class QuarryScreen extends AbstractContainerScreen<QuarryMenu> {
             double mouseY = event.y();
             if (buttonUp != null && buttonUp.isMouseOver(mouseX, mouseY)) {
                 sendSize(0, false);
+                return true;
+            }
+            if (buttonOffsetLeft != null && buttonOffsetLeft.isMouseOver(mouseX, mouseY)) {
+                sendSize(4, false);
+                return true;
+            }
+            if (buttonOffsetRight != null && buttonOffsetRight.isMouseOver(mouseX, mouseY)) {
+                sendSize(5, false);
                 return true;
             }
             if (buttonLeft != null && buttonLeft.isMouseOver(mouseX, mouseY)) {

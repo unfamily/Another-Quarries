@@ -14,11 +14,19 @@ import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.FluidUtil;
 import net.unfamily.another_quarries.config.ModConfig;
+import net.unfamily.another_quarries.mining.QuarryFluidFilterMatcher;
 import net.unfamily.another_quarries.integration.anotherdynamics.AnotherDynamicsIntegration;
 import net.unfamily.another_quarries.integration.anotherdynamics.QuarryFilterCopierCompat;
 import net.unfamily.another_quarries.integration.jei.JeiRuntimeState;
@@ -52,12 +60,16 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
     private EditBox filterEditTextBox;
     private Button filterEditLeftArrow;
     private Button filterEditRightArrow;
+    private Button filterEditConvertButton;
+    private Button filterEditAnythingElseButton;
     private Button filterEditApplyButton;
     private Button filterEditClearButton;
     private Button filterEditCloseButton;
     private int filterEditGhostSlotX;
     private int filterEditGhostSlotY;
     private ItemStack ghostSlotItem = ItemStack.EMPTY;
+    /** When true, destroy-list edit cycles fluid variants (after Convert / fluid ghost). */
+    private boolean filterEditFluidMode;
 
     private final QuarryFilterScrollbarInput filterScrollbar = new QuarryFilterScrollbarInput();
     private List<String> filterVariants = List.of();
@@ -79,6 +91,27 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
 
     private boolean showsCopierColumn() {
         return AnotherDynamicsIntegration.isLoaded();
+    }
+
+    private boolean isPump() {
+        return menu.isPumpVariant();
+    }
+
+    private Component listTitle() {
+        return Component.translatable(isPump()
+                ? "gui.another_quarries.quarry.pump.title"
+                : "gui.another_quarries.quarry.filter.title");
+    }
+
+    private ItemStack previewFor(String line) {
+        return isPump() ? QuarryFilterRowDisplay.previewStackForPump(line) : QuarryFilterRowDisplay.previewStack(line);
+    }
+
+    private List<String> variantsForLine(String line) {
+        if (isPump() || filterEditFluidMode || QuarryFilterVariants.isFluidOrientedDestroyLine(line)) {
+            return QuarryFilterVariants.variantsForFluidLine(line, isPump());
+        }
+        return QuarryFilterVariants.variantsForLine(line);
     }
 
     @Override
@@ -140,12 +173,27 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         filterEditRightArrow.visible = false;
         addRenderableWidget(filterEditRightArrow);
 
+        filterEditConvertButton = Button.builder(Component.literal("\uD83E\uDEA3"), b -> convertResource())
+                .bounds(0, 0, QuarryFilterGuiLayout.ROW_BUTTON_SIZE, QuarryFilterGuiLayout.ROW_BUTTON_SIZE)
+                .tooltip(Tooltip.create(Component.translatable("gui.another_quarries.quarry.filter.convert.tooltip")))
+                .build();
+        filterEditConvertButton.visible = false;
+        addRenderableWidget(filterEditConvertButton);
+
         filterEditTextBox = new EditBox(font, 0, 0, 1, 15, Component.empty());
         filterEditTextBox.setMaxLength(256);
         filterEditTextBox.setEditable(true);
         applyFilterEntryEditBoxTextStyle();
         filterEditTextBox.visible = false;
         addRenderableWidget(filterEditTextBox);
+
+        filterEditAnythingElseButton = Button.builder(Component.literal("\u03A3"), b -> insertAnythingElse())
+                .bounds(0, 0, QuarryFilterGuiLayout.ROW_BUTTON_SIZE, QuarryFilterGuiLayout.ROW_BUTTON_SIZE)
+                .tooltip(Tooltip.create(Component.translatable(
+                        "gui.another_quarries.quarry.pump.anything_else.button.tooltip")))
+                .build();
+        filterEditAnythingElseButton.visible = false;
+        addRenderableWidget(filterEditAnythingElseButton);
 
         filterEditClearButton = Button.builder(Component.literal("C"), b -> clearFilterEditLine())
                 .bounds(0, 0, QuarryFilterGuiLayout.ROW_BUTTON_SIZE, QuarryFilterGuiLayout.ROW_BUTTON_SIZE)
@@ -187,7 +235,6 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             rebuildFilterEntryWidgets();
         }
         updateCopierPasteButtonState();
-        layoutFilterWidgets();
     }
 
     private InteractionHand editHand() {
@@ -219,7 +266,7 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
     }
 
     private void renderFilterTitle(GuiGraphicsExtractor guiGraphics) {
-        Component title = Component.translatable("gui.another_quarries.quarry.filter.title");
+        Component title = listTitle();
         int titleX = leftPos + (imageWidth - font.width(title)) / 2;
         guiGraphics.text(font, title, titleX, topPos + TITLE_Y, GuiTextColors.TITLE, false);
     }
@@ -230,10 +277,10 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             Component title = Component.translatable("gui.another_quarries.quarry.filter.how_to_use");
             int titleX = (imageWidth - font.width(title)) / 2;
             guiGraphics.text(font, title, titleX, TITLE_Y, GuiTextColors.TITLE, false);
-            QuarryFilterHelpRenderer.render(guiGraphics, font, mouseX - leftPos, mouseY - topPos, filterHelpFrame);
+            QuarryFilterHelpRenderer.render(guiGraphics, font, mouseX - leftPos, mouseY - topPos, filterHelpFrame, isPump());
             return;
         }
-        Component title = Component.translatable("gui.another_quarries.quarry.filter.title");
+        Component title = listTitle();
         int titleX = (imageWidth - font.width(title)) / 2;
         guiGraphics.text(font, title, titleX, TITLE_Y, GuiTextColors.TITLE, false);
     }
@@ -270,6 +317,15 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
                 handleFilterGhostSlotClick();
                 return true;
             }
+        }
+        // Middle-click paste into the filter EditBox (vanilla EditBox does not handle it).
+        if (inFilterEditMode() && event.button() == 2 && filterEditTextBox != null && filterEditTextBox.visible
+                && filterEditTextBox.isMouseOver(mouseX, mouseY)) {
+            focusFilterEditBox();
+            if (minecraft != null && minecraft.keyboardHandler != null) {
+                filterEditTextBox.insertText(minecraft.keyboardHandler.getClipboard());
+            }
+            return true;
         }
         if (subView == SubView.DESTROY_FILTERS && !inFilterEditMode()) {
             int maxLines = ModConfig.quarryFilterMaxLines();
@@ -329,6 +385,7 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             if (JeiRuntimeState.jeiHasKeyboardFocusOrRecipesGuiOpen()) {
                 return false;
             }
+            focusFilterEditBox();
             if (QuarryFilterGuiInput.handleFilterEditKeyPressed(this, event, filterEditTextBox, this::applyFilterEdit)) {
                 return true;
             }
@@ -342,11 +399,26 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
 
     @Override
     public boolean charTyped(CharacterEvent event) {
-        if (inFilterEditMode() && filterEditTextBox != null
-                && QuarryFilterGuiInput.handleFilterEditCharTyped(filterEditTextBox, event)) {
-            return true;
+        if (inFilterEditMode() && filterEditTextBox != null) {
+            if (JeiRuntimeState.jeiHasKeyboardFocusOrRecipesGuiOpen()) {
+                return false;
+            }
+            focusFilterEditBox();
+            if (QuarryFilterGuiInput.handleFilterEditCharTyped(filterEditTextBox, event)) {
+                return true;
+            }
         }
         return super.charTyped(event);
+    }
+
+    /** Makes the filter EditBox the Screen-focused widget so Backspace/Ctrl+V reach it. */
+    private void focusFilterEditBox() {
+        if (filterEditTextBox == null) {
+            return;
+        }
+        filterEditTextBox.setCanLoseFocus(false);
+        setFocused(filterEditTextBox);
+        filterEditTextBox.setFocused(true);
     }
 
     private void closeButtonAction() {
@@ -378,7 +450,11 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
 
     private void unfocusAllTextFields() {
         if (filterEditTextBox != null) {
+            filterEditTextBox.setCanLoseFocus(true);
             filterEditTextBox.setFocused(false);
+        }
+        if (getFocused() == filterEditTextBox) {
+            setFocused(null);
         }
     }
 
@@ -397,6 +473,8 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         setVisible(filterEditTextBox, showEditChrome);
         setVisible(filterEditLeftArrow, showEditChrome);
         setVisible(filterEditRightArrow, showEditChrome);
+        setVisible(filterEditConvertButton, showEditChrome && !isPump());
+        setVisible(filterEditAnythingElseButton, showEditChrome && isPump());
         setVisible(filterEditApplyButton, showEditChrome);
         setVisible(filterEditClearButton, showEditChrome);
         setVisible(filterEditCloseButton, showEditChrome);
@@ -436,12 +514,33 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
     private void updateCopierPasteButtonState() {
         if (settingsCopierLoadButton == null || minecraft == null || minecraft.player == null) return;
         if (!settingsCopierLoadButton.visible) return;
-        boolean filterListMode = QuarryFilterCopierCompat.isHeldCopierFilterListMode(minecraft.player);
-        settingsCopierLoadButton.active = filterListMode;
-        settingsCopierLoadButton.setTooltip(Tooltip.create(Component.translatable(
-                filterListMode
-                        ? "gui.another_quarries.quarry.filter.copier.paste.tooltip"
-                        : "gui.another_quarries.quarry.filter.copier.paste.disabled")));
+        ItemStack module = minecraft.player.getItemInHand(editHand());
+        ItemStack copier = menu.copierSlotStack();
+        boolean compatible = QuarryFilterCopierCompat.isCopierCompatibleWithModule(copier, module);
+        boolean filterListMode = QuarryFilterCopierCompat.isCopierFilterListMode(copier);
+        settingsCopierLoadButton.active = compatible;
+        String tooltipKey;
+        if (compatible) {
+            tooltipKey = isPump()
+                    ? "gui.another_quarries.quarry.pump.copier.paste.tooltip"
+                    : "gui.another_quarries.quarry.filter.copier.paste.tooltip";
+        } else if (copier.isEmpty()) {
+            tooltipKey = "gui.another_quarries.quarry.filter.copier.paste.disabled";
+        } else if (filterListMode) {
+            tooltipKey = isPump()
+                    ? "gui.another_quarries.quarry.pump.copier.paste.disabled"
+                    : "gui.another_quarries.quarry.filter.copier.paste.disabled.kind";
+        } else {
+            tooltipKey = isPump()
+                    ? "gui.another_quarries.quarry.pump.copier.paste.disabled"
+                    : "gui.another_quarries.quarry.filter.copier.paste.disabled";
+        }
+        settingsCopierLoadButton.setTooltip(Tooltip.create(Component.translatable(tooltipKey)));
+        if (settingsCopierSaveButton != null && settingsCopierSaveButton.visible) {
+            settingsCopierSaveButton.setTooltip(Tooltip.create(Component.translatable(isPump()
+                    ? "gui.another_quarries.quarry.pump.copier.copy.tooltip"
+                    : "gui.another_quarries.quarry.filter.copier.copy.tooltip")));
+        }
     }
 
     private static void setVisible(AbstractWidget widget, boolean visible) {
@@ -551,7 +650,8 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         List<String> lines = menu.getClientDestroyFilters();
         while (lines.size() <= index) lines.add("");
         filterEditOriginal = lines.get(index) != null ? lines.get(index) : "";
-        filterVariants = QuarryFilterVariants.variantsForLine(filterEditOriginal);
+        filterEditFluidMode = !isPump() && QuarryFilterVariants.isFluidOrientedDestroyLine(filterEditOriginal);
+        filterVariants = variantsForLine(filterEditOriginal);
         currentFilterVariantIndex = filterVariants.indexOf(filterEditOriginal.trim());
         if (currentFilterVariantIndex < 0) {
             currentFilterVariantIndex = 0;
@@ -560,13 +660,15 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             filterEditTextBox.setValue(filterEditOriginal);
             filterEditTextBox.setCursorPosition(0);
             filterEditTextBox.setHighlightPos(0);
-            filterEditTextBox.setFocused(true);
             applyFilterEntryEditBoxTextStyle();
+            focusFilterEditBox();
         }
         filterScrollOffset = Mth.clamp(filterScrollOffset, 0, maxFilterScroll());
         layoutFilterWidgets();
         updateSubviewVisibility();
         rebuildFilterEntryWidgets();
+        // Re-assert focus after rebuild (row buttons may steal Screen focus via removeWidget).
+        focusFilterEditBox();
         playButtonSound();
     }
 
@@ -574,10 +676,17 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         if (filterEditIndex >= 0 && restoreValue) sendFilterLineUpdate(filterEditIndex, filterEditOriginal);
         filterEditIndex = -1;
         filterEditOriginal = "";
+        filterEditFluidMode = false;
         filterVariants = List.of();
         currentFilterVariantIndex = 0;
         clearGhostCalibration(false);
-        if (filterEditTextBox != null) filterEditTextBox.setFocused(false);
+        if (filterEditTextBox != null) {
+            filterEditTextBox.setCanLoseFocus(true);
+            filterEditTextBox.setFocused(false);
+        }
+        if (getFocused() == filterEditTextBox) {
+            setFocused(null);
+        }
         layoutFilterWidgets();
         updateSubviewVisibility();
         if (subView == SubView.DESTROY_FILTERS) rebuildFilterEntryWidgets();
@@ -593,7 +702,8 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             lines.add("");
         }
         filterEditOriginal = lines.get(filterEditIndex) != null ? lines.get(filterEditIndex) : "";
-        filterVariants = QuarryFilterVariants.variantsForLine(filterEditOriginal);
+        filterEditFluidMode = !isPump() && QuarryFilterVariants.isFluidOrientedDestroyLine(filterEditOriginal);
+        filterVariants = variantsForLine(filterEditOriginal);
         currentFilterVariantIndex = filterVariants.indexOf(filterEditOriginal.trim());
         if (currentFilterVariantIndex < 0) {
             currentFilterVariantIndex = 0;
@@ -602,7 +712,9 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         filterEditTextBox.setCursorPosition(0);
         filterEditTextBox.setHighlightPos(0);
         applyFilterEntryEditBoxTextStyle();
-        filterEditTextBox.setFocused(grabFocus);
+        if (grabFocus) {
+            focusFilterEditBox();
+        }
     }
 
     private void applyFilterEntryEditBoxTextStyle() {
@@ -616,7 +728,7 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             return;
         }
         if (filterVariants.isEmpty()) {
-            filterVariants = QuarryFilterVariants.variantsForLine(filterEditTextBox.getValue());
+            filterVariants = variantsForLine(filterEditTextBox.getValue());
             currentFilterVariantIndex = filterVariants.indexOf(filterEditTextBox.getValue().trim());
             if (currentFilterVariantIndex < 0) {
                 currentFilterVariantIndex = 0;
@@ -637,6 +749,7 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
 
     private void clearGhostCalibration(boolean updateEditBox) {
         ghostSlotItem = ItemStack.EMPTY;
+        filterEditFluidMode = false;
         filterVariants = List.of();
         currentFilterVariantIndex = 0;
         if (updateEditBox && filterEditTextBox != null) {
@@ -651,6 +764,11 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             clearGhostCalibration(updateEditBox);
             return;
         }
+        if (isPump()) {
+            applyGhostFromFluid(QuarryFilterVariants.fluidContainedIn(stack), updateEditBox);
+            return;
+        }
+        filterEditFluidMode = false;
         ghostSlotItem = stack.copy();
         filterVariants = QuarryFilterVariants.variantsFromItemStack(stack);
         currentFilterVariantIndex = 0;
@@ -664,6 +782,83 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             filterEditTextBox.setHighlightPos(first.length());
             sendFilterLineUpdate(filterEditIndex, first);
         }
+    }
+
+    /** Calibrates a fluid filter line (pump drain list, or destroy list after Convert / fluid ghost). */
+    private void applyGhostFromFluid(Fluid fluid, boolean updateEditBox) {
+        if (fluid == null || fluid == Fluids.EMPTY) {
+            return;
+        }
+        if (!isPump()) {
+            filterEditFluidMode = true;
+        }
+        ghostSlotItem = QuarryFilterRowDisplay.bucketFor(fluid);
+        filterVariants = QuarryFilterVariants.variantsFromFluid(fluid, isPump());
+        currentFilterVariantIndex = 0;
+        if (filterVariants.isEmpty()) {
+            return;
+        }
+        if (updateEditBox && filterEditTextBox != null) {
+            String first = filterVariants.get(0);
+            filterEditTextBox.setValue(first);
+            filterEditTextBox.setCursorPosition(first.length());
+            filterEditTextBox.setHighlightPos(first.length());
+            sendFilterLineUpdate(filterEditIndex, first);
+        }
+    }
+
+    /** Sequential Buffer-style Convert: item/bucket in ghost → fluid filter variants. */
+    private void convertResource() {
+        if (isPump() || !inFilterEditMode()) {
+            return;
+        }
+        ItemStack stack = resolveConvertSource();
+        if (stack.isEmpty()) {
+            return;
+        }
+        Fluid fluid = FluidUtil.getFluidContained(stack)
+                .filter(contained -> !contained.isEmpty())
+                .map(FluidStack::getFluid)
+                .orElse(Fluids.EMPTY);
+        if (fluid == Fluids.EMPTY) {
+            return;
+        }
+        applyGhostFromFluid(fluid, true);
+        playButtonSound();
+    }
+
+    private ItemStack resolveConvertSource() {
+        if (!ghostSlotItem.isEmpty()) {
+            return ghostSlotItem;
+        }
+        ItemStack carried = menu.getCarried();
+        if (!carried.isEmpty()) {
+            return carried;
+        }
+        return resolveExactIdItemFromFilterText();
+    }
+
+    private ItemStack resolveExactIdItemFromFilterText() {
+        if (filterEditTextBox == null) {
+            return ItemStack.EMPTY;
+        }
+        String text = filterEditTextBox.getValue().trim();
+        if (!text.startsWith("-")) {
+            return ItemStack.EMPTY;
+        }
+        try {
+            Identifier id = Identifier.parse(text.substring(1));
+            return BuiltInRegistries.ITEM.get(id)
+                    .map(holder -> new ItemStack(holder.value()))
+                    .orElse(ItemStack.EMPTY);
+        } catch (Exception ignored) {
+            return ItemStack.EMPTY;
+        }
+    }
+
+    private void handleGhostFluidDrop(FluidStack stack) {
+        applyGhostFromFluid(stack.getFluid(), true);
+        playButtonSound();
     }
 
     private void handleFilterGhostSlotClick() {
@@ -688,7 +883,13 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             @Override
             public @Nullable Object supportedTarget(Object ingredient) {
                 if (ingredient instanceof ItemStack stack && !stack.isEmpty()) {
+                    if (isPump() && QuarryFilterVariants.fluidContainedIn(stack) == Fluids.EMPTY) {
+                        return null;
+                    }
                     return stack;
+                }
+                if (ingredient instanceof FluidStack fluidStack && !fluidStack.isEmpty()) {
+                    return fluidStack;
                 }
                 return null;
             }
@@ -697,6 +898,8 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             public void accept(Object ingredient) {
                 if (ingredient instanceof ItemStack stack) {
                     handleGhostIngredientDrop(stack);
+                } else if (ingredient instanceof FluidStack fluidStack) {
+                    handleGhostFluidDrop(fluidStack);
                 }
             }
         };
@@ -753,7 +956,8 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         if (filterHelpButton == null || subView != SubView.DESTROY_FILTERS) {
             return;
         }
-        int bx = leftPos + QuarryFilterGuiLayout.navBackButtonX();
+        boolean withConvert = !isPump() && inFilterEditMode();
+        int bx = leftPos + QuarryFilterGuiLayout.navBackButtonX(withConvert);
         int by = topPos + QuarryFilterGuiLayout.navBackButtonY();
         filterHelpButton.setX(bx);
         filterHelpButton.setY(by);
@@ -789,6 +993,10 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         filterEditGhostSlotY = slotY;
         if (filterEditLeftArrow != null) filterEditLeftArrow.setPosition(leftArrowX, buttonRowY);
         if (filterEditRightArrow != null) filterEditRightArrow.setPosition(rightArrowX, buttonRowY);
+        if (filterEditConvertButton != null) {
+            filterEditConvertButton.setPosition(
+                    leftPos + QuarryFilterGuiLayout.convertButtonX(), buttonRowY);
+        }
         if (filterEditClearButton != null) filterEditClearButton.setPosition(clearButtonX, buttonRowY);
         if (filterEditApplyButton != null) filterEditApplyButton.setPosition(applyButtonX, buttonRowY);
         if (filterEditCloseButton != null) filterEditCloseButton.setPosition(closeButtonX, buttonRowY);
@@ -796,10 +1004,36 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         int textBoxX = leftPos + QuarryFilterGuiLayout.ENTRY_X + QuarryFilterGuiLayout.EDIT_MODE_TEXT_INSET_X;
         int entryContentRight = leftPos + QuarryFilterGuiLayout.ENTRY_X + QuarryFilterGuiLayout.ENTRY_WIDTH
                 - QuarryFilterGuiLayout.EDIT_MODE_TEXT_INSET_X;
+        int textBoxWidth = entryContentRight - textBoxX;
+        boolean showAnythingElse = isPump() && filterEditAnythingElseButton != null;
+        if (showAnythingElse) {
+            textBoxWidth = Math.max(40, textBoxWidth - buttonSize - buttonSpacing);
+        }
         filterEditTextBox.setPosition(textBoxX, textBoxY);
-        filterEditTextBox.setWidth(entryContentRight - textBoxX);
+        filterEditTextBox.setWidth(textBoxWidth);
         filterEditTextBox.setHeight(15);
+        if (showAnythingElse) {
+            int anyX = textBoxX + textBoxWidth + buttonSpacing;
+            int anyY = textBoxY + (15 - buttonSize) / 2;
+            filterEditAnythingElseButton.setPosition(anyX, anyY);
+        }
         applyFilterEntryEditBoxTextStyle();
+    }
+
+    /** Pump only: inserts {@code &anything_else} so the drain list catches every remaining fluid. */
+    private void insertAnythingElse() {
+        if (!isPump() || !inFilterEditMode() || filterEditTextBox == null) {
+            return;
+        }
+        String token = QuarryFluidFilterMatcher.ANYTHING_ELSE;
+        ghostSlotItem = ItemStack.EMPTY;
+        filterVariants = List.of(token);
+        currentFilterVariantIndex = 0;
+        filterEditTextBox.setValue(token);
+        filterEditTextBox.setCursorPosition(token.length());
+        filterEditTextBox.setHighlightPos(token.length());
+        sendFilterLineUpdate(filterEditIndex, token);
+        playButtonSound();
     }
 
     private void renderFilterPanel(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
@@ -860,47 +1094,86 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
 
     private void renderFilterEditGhostSlot(GuiGraphicsExtractor guiGraphics) {
         QuarryFilterGuiSprites.blitSingleSlot(guiGraphics, filterEditGhostSlotX, filterEditGhostSlotY);
+        String line = filterEditTextBox != null ? filterEditTextBox.getValue() : "";
+        if (shouldShowFluidIcon(line)) {
+            FluidStack fluid = resolveEditGhostFluid(line);
+            if (!fluid.isEmpty()) {
+                FluidRenderHelper.blit16(guiGraphics, fluid, filterEditGhostSlotX + 1, filterEditGhostSlotY + 1);
+                return;
+            }
+        }
         if (!ghostSlotItem.isEmpty()) {
             guiGraphics.item(ghostSlotItem, filterEditGhostSlotX + 1, filterEditGhostSlotY + 1);
             guiGraphics.itemDecorations(font, ghostSlotItem, filterEditGhostSlotX + 1, filterEditGhostSlotY + 1);
             return;
         }
-        String line = filterEditTextBox != null ? filterEditTextBox.getValue() : "";
         renderFilterRowIcon(guiGraphics, line, filterEditGhostSlotX, filterEditGhostSlotY);
     }
 
+    /**
+     * Draw copy-slot frame (baked ghost icon when empty) then the item physically in the slot —
+     * same pattern as AD duct node. Never ghosts an inventory Settings Copier into an empty slot.
+     */
     private void renderCopierColumn(GuiGraphicsExtractor guiGraphics) {
+        int copierSlot = menu.copySettingsSlotIndex();
+        if (copierSlot < 0) {
+            return;
+        }
         int frameX = leftPos + QuarryFilterGuiLayout.SLOT_COPY_BACKGROUND_X;
         int frameY = topPos + QuarryFilterGuiLayout.SLOT_COPY_BACKGROUND_Y;
         int iconX = leftPos + QuarryFilterGuiLayout.SLOT_COPY_X;
         int iconY = topPos + QuarryFilterGuiLayout.SLOT_COPY_Y;
         QuarryFilterGuiSprites.blitCopierSlotFrame(guiGraphics, frameX, frameY);
-        ItemStack copier = resolveCopierDisplayStack();
+        ItemStack copier = menu.getSlot(copierSlot).getItem();
         if (!copier.isEmpty()) {
             guiGraphics.item(copier, iconX, iconY);
             guiGraphics.itemDecorations(font, copier, iconX, iconY);
         }
     }
 
-    private ItemStack resolveCopierDisplayStack() {
-        int idx = menu.copySettingsSlotIndex();
-        if (idx >= 0) {
-            ItemStack inSlot = menu.getSlot(idx).getItem();
-            if (!inSlot.isEmpty()) return inSlot;
+    @Override
+    protected void extractSlot(GuiGraphicsExtractor guiGraphics, Slot slot, int mouseX, int mouseY) {
+        int copierSlot = menu.copySettingsSlotIndex();
+        if (copierSlot >= 0 && slot.index == copierSlot) {
+            // Drawn in renderCopierColumn above the frame.
+            return;
         }
-        if (minecraft != null && minecraft.player != null) {
-            ItemStack held = QuarryFilterCopierCompat.findHeldSettingsCopier(minecraft.player);
-            if (held != null) return held;
-        }
-        return ItemStack.EMPTY;
+        super.extractSlot(guiGraphics, slot, mouseX, mouseY);
     }
 
     private void renderFilterRowIcon(GuiGraphicsExtractor guiGraphics, String filterLine, int slotX, int slotY) {
-        ItemStack stack = QuarryFilterRowDisplay.previewStack(filterLine);
+        // List rows use only the line text — never the edit-mode ghost (that leaked the same fluid into every slot).
+        if (shouldShowFluidIconForLine(filterLine)) {
+            FluidStack fluid = QuarryFilterRowDisplay.previewFluidStack(filterLine);
+            if (!fluid.isEmpty()) {
+                FluidRenderHelper.blit16(guiGraphics, fluid, slotX + 1, slotY + 1);
+                return;
+            }
+        }
+        ItemStack stack = previewFor(filterLine);
         if (!stack.isEmpty()) {
             guiGraphics.item(stack, slotX + 1, slotY + 1);
             guiGraphics.itemDecorations(font, stack, slotX + 1, slotY + 1);
         }
+    }
+
+    private boolean shouldShowFluidIcon(String filterLine) {
+        return isPump() || filterEditFluidMode || shouldShowFluidIconForLine(filterLine);
+    }
+
+    private boolean shouldShowFluidIconForLine(String filterLine) {
+        return isPump() || QuarryFilterVariants.isFluidOrientedDestroyLine(filterLine);
+    }
+
+    /** Edit ghost only: may use the calibrated ghost item's contained fluid. */
+    private FluidStack resolveEditGhostFluid(String filterLine) {
+        if (!ghostSlotItem.isEmpty()) {
+            Fluid contained = QuarryFilterVariants.fluidContainedIn(ghostSlotItem);
+            if (contained != Fluids.EMPTY) {
+                return new FluidStack(contained, 1000);
+            }
+        }
+        return QuarryFilterRowDisplay.previewFluidStack(filterLine);
     }
 
     private void renderFilterEntryIconTooltips(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
@@ -910,7 +1183,7 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         if (inFilterEditMode()) {
             ItemStack ghostStack = !ghostSlotItem.isEmpty()
                     ? ghostSlotItem
-                    : QuarryFilterRowDisplay.previewStack(filterEditTextBox != null ? filterEditTextBox.getValue() : "");
+                    : previewFor(filterEditTextBox != null ? filterEditTextBox.getValue() : "");
             if (!ghostStack.isEmpty()
                     && mouseInRect(mouseX, mouseY, filterEditGhostSlotX, filterEditGhostSlotY, 18, 18)) {
                 guiGraphics.setTooltipForNextFrame(font, ghostStack, mouseX, mouseY);
@@ -929,18 +1202,30 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             int slotX = entryX + QuarryFilterGuiLayout.ENTRY_SLOT_INSET;
             int slotY = entryY + QuarryFilterGuiLayout.ENTRY_SLOT_INSET;
             String filter = index < lines.size() && lines.get(index) != null ? lines.get(index) : "";
-            ItemStack stack = QuarryFilterRowDisplay.previewStack(filter);
+            ItemStack stack = previewFor(filter);
             if (!stack.isEmpty() && mouseInRect(mouseX, mouseY, slotX, slotY, 18, 18)) {
                 guiGraphics.setTooltipForNextFrame(font, stack, mouseX, mouseY);
                 return;
             }
         }
         if (showsCopierColumn()) {
-            int iconX = leftPos + QuarryFilterGuiLayout.SLOT_COPY_X;
-            int iconY = topPos + QuarryFilterGuiLayout.SLOT_COPY_Y;
-            ItemStack copier = resolveCopierDisplayStack();
-            if (!copier.isEmpty() && mouseInRect(mouseX, mouseY, iconX, iconY, 18, 18)) {
-                guiGraphics.setTooltipForNextFrame(font, copier, mouseX, mouseY);
+            int copierSlot = menu.copySettingsSlotIndex();
+            if (copierSlot >= 0 && hoveredSlot != null && hoveredSlot.index == copierSlot) {
+                ItemStack copier = menu.getSlot(copierSlot).getItem();
+                if (!copier.isEmpty()) {
+                    guiGraphics.setTooltipForNextFrame(font, copier, mouseX, mouseY);
+                } else {
+                    guiGraphics.setTooltipForNextFrame(
+                            font,
+                            List.of(
+                                    Component.translatable("gui.another_quarries.quarry.filter.copy_slot.tooltip.line1"),
+                                    Component.translatable("gui.another_quarries.quarry.filter.copy_slot.tooltip.line2")),
+                            java.util.Optional.empty(),
+                            ItemStack.EMPTY,
+                            mouseX,
+                            mouseY,
+                            null);
+                }
             }
         }
     }

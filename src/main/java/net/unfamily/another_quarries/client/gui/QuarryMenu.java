@@ -17,6 +17,7 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.items.SlotItemHandler;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
+import net.unfamily.another_quarries.item.QuarryModules;
 import net.unfamily.another_quarries.registry.ModBlocks;
 import net.unfamily.another_quarries.registry.ModItems;
 import net.unfamily.another_quarries.registry.ModMenuTypes;
@@ -25,20 +26,20 @@ import net.unfamily.another_quarries.util.QuarryAreaLogic;
 import java.util.List;
 
 public class QuarryMenu extends AbstractContainerMenu {
-    public static final int GUI_WIDTH = 176;
+    public static final int GUI_WIDTH = 220;
     public static final int GUI_HEIGHT = 240;
 
-    public static final int BUFFER_SLOTS_X = 8;
+    public static final int BUFFER_SLOTS_X = 30;
     public static final int BUFFER_SLOTS_Y = 25;
-    public static final int EQUIPMENT_SLOTS_X = 8;
+    public static final int EQUIPMENT_SLOTS_X = 30;
     public static final int EQUIPMENT_SLOTS_Y = 126;
-    public static final int PLAYER_INVENTORY_X = 8;
+    public static final int PLAYER_INVENTORY_X = 30;
     public static final int PLAYER_INVENTORY_Y = 158;
     public static final int PLAYER_HOTBAR_Y = 216;
 
-    public static final int CONTROL_BAND_LEFT = 7;
+    public static final int CONTROL_BAND_LEFT = 29;
     public static final int CONTROL_BAND_TOP = 81;
-    public static final int CONTROL_BAND_RIGHT = 168;
+    public static final int CONTROL_BAND_RIGHT = 191;
     public static final int CONTROL_BAND_BOTTOM = 121;
     public static final int CONTROL_BAND_WIDTH = CONTROL_BAND_RIGHT - CONTROL_BAND_LEFT;
     public static final int CONTROL_BAND_HEIGHT = CONTROL_BAND_BOTTOM - CONTROL_BAND_TOP;
@@ -84,6 +85,10 @@ public class QuarryMenu extends AbstractContainerMenu {
         return equipmentMenuIndex(QuarryEquipmentSlots.filterModuleSlot());
     }
 
+    public static int pumpModuleMenuIndex() {
+        return equipmentMenuIndex(QuarryEquipmentSlots.pumpModuleSlot());
+    }
+
     /** @deprecated use {@link #filterModuleMenuIndex()} */
     @Deprecated
     public static final int FILTER_SLOT_INDEX = filterModuleMenuIndex();
@@ -126,7 +131,10 @@ public class QuarryMenu extends AbstractContainerMenu {
     private static final int BLOCK_POS_Z_INDEX = 13;
     private static final int PROCESSED_CHUNKS_INDEX = 14;
     private static final int TOTAL_CHUNKS_INDEX = 15;
-    private static final int DATA_COUNT = 16;
+    /** First tank slot; each tank uses three entries: amount, capacity, fluid registry id (-1 = empty). */
+    private static final int TANK_DATA_START = 16;
+    private static final int TANK_DATA_STRIDE = 3;
+    private static final int DATA_COUNT = TANK_DATA_START + QuarryBlockEntity.TANK_COUNT * TANK_DATA_STRIDE;
 
     private final QuarryBlockEntity blockEntity;
     private final ContainerLevelAccess levelAccess;
@@ -203,7 +211,7 @@ public class QuarryMenu extends AbstractContainerMenu {
                     case BLOCK_POS_Z_INDEX -> be.getBlockPos().getZ();
                     case PROCESSED_CHUNKS_INDEX -> be.getProcessedAreaChunkCount();
                     case TOTAL_CHUNKS_INDEX -> be.getTotalAreaChunkCount();
-                    default -> 0;
+                    default -> tankData(be, index);
                 };
             }
 
@@ -217,23 +225,26 @@ public class QuarryMenu extends AbstractContainerMenu {
         };
     }
 
+    private static int tankData(QuarryBlockEntity be, int index) {
+        int offset = index - TANK_DATA_START;
+        if (offset < 0 || offset >= QuarryBlockEntity.TANK_COUNT * TANK_DATA_STRIDE) {
+            return 0;
+        }
+        int tank = offset / TANK_DATA_STRIDE;
+        return switch (offset % TANK_DATA_STRIDE) {
+            case 0 -> be.getTankAmount(tank);
+            case 1 -> be.getTankCapacity(tank);
+            default -> be.getTankFluidId(tank);
+        };
+    }
+
     private void addBufferSlots(IItemHandler handler) {
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
                 int slotIndex = col + row * 9;
                 addSlot(new SlotItemHandler(handler, slotIndex,
                         BUFFER_SLOTS_X + col * 18,
-                        BUFFER_SLOTS_Y + row * 18) {
-                    @Override
-                    public boolean mayPlace(ItemStack stack) {
-                        return false;
-                    }
-
-                    @Override
-                    public boolean mayPickup(Player player) {
-                        return false;
-                    }
-                });
+                        BUFFER_SLOTS_Y + row * 18));
             }
         }
     }
@@ -291,28 +302,47 @@ public class QuarryMenu extends AbstractContainerMenu {
     public ItemStack quickMoveStack(Player player, int index) {
         ItemStack itemstack = ItemStack.EMPTY;
         Slot slot = this.slots.get(index);
-        if (slot != null && slot.hasItem()) {
-            ItemStack slotStack = slot.getItem();
-            itemstack = slotStack.copy();
-            if (index < PLAYER_SLOT_START) {
-                if (index < BUFFER_SLOT_COUNT && ModItems.isQuarryEquipment(slotStack)) {
-                    if (!moveEquipmentFromStack(slotStack)
-                            && !this.moveItemStackTo(slotStack, PLAYER_SLOT_START, 64, false)) {
-                        return ItemStack.EMPTY;
-                    }
-                } else if (!this.moveItemStackTo(slotStack, PLAYER_SLOT_START, 64, false)) {
-                    return ItemStack.EMPTY;
+        if (slot == null || !slot.hasItem()) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack slotStack = slot.getItem();
+        itemstack = slotStack.copy();
+        boolean moved = false;
+        if (index < PLAYER_SLOT_START) {
+            if (index < BUFFER_SLOT_COUNT && ModItems.isQuarryEquipment(slotStack)) {
+                moved = moveEquipmentFromStack(slotStack);
+                if (!moved) {
+                    moved = this.moveItemStackTo(slotStack, PLAYER_SLOT_START, this.slots.size(), false);
+                } else if (!slotStack.isEmpty()) {
+                    this.moveItemStackTo(slotStack, PLAYER_SLOT_START, this.slots.size(), false);
                 }
-            } else if (ModItems.isQuarryEquipment(slotStack)) {
-                if (!moveEquipmentFromStack(slotStack)) {
-                    return ItemStack.EMPTY;
-                }
-            }
-            if (slotStack.isEmpty()) {
-                slot.setByPlayer(ItemStack.EMPTY);
             } else {
-                slot.setChanged();
+                moved = this.moveItemStackTo(slotStack, PLAYER_SLOT_START, this.slots.size(), false);
             }
+            if (!moved) {
+                return ItemStack.EMPTY;
+            }
+        } else {
+            boolean isEquipment = ModItems.isQuarryEquipment(slotStack);
+            boolean isModule = QuarryModules.isModule(slotStack);
+            int before = slotStack.getCount();
+            if (isEquipment) {
+                moved = moveEquipmentFromStack(slotStack);
+            }
+            boolean insertedToModules = isModule && moved && slotStack.getCount() < before;
+            if (!insertedToModules && !slotStack.isEmpty()) {
+                if (this.moveItemStackTo(slotStack, 0, BUFFER_SLOT_COUNT, false)) {
+                    moved = true;
+                }
+            }
+            if (!moved) {
+                return ItemStack.EMPTY;
+            }
+        }
+        if (slotStack.isEmpty()) {
+            slot.setByPlayer(ItemStack.EMPTY);
+        } else {
+            slot.setChanged();
         }
         return itemstack;
     }
@@ -341,6 +371,9 @@ public class QuarryMenu extends AbstractContainerMenu {
         }
         if (stack.is(ModItems.MODULE_FILTER.get())) {
             return moveToEquipment(stack, filterModuleMenuIndex(), filterModuleMenuIndex() + 1);
+        }
+        if (stack.is(ModItems.MODULE_PUMP.get())) {
+            return moveToEquipment(stack, pumpModuleMenuIndex(), pumpModuleMenuIndex() + 1);
         }
         return false;
     }
@@ -429,6 +462,19 @@ public class QuarryMenu extends AbstractContainerMenu {
             return this.blockPos;
         }
         return new BlockPos(x, y, z);
+    }
+
+    public int getTankAmount(int tank) {
+        return containerData.get(TANK_DATA_START + tank * TANK_DATA_STRIDE);
+    }
+
+    public int getTankCapacity(int tank) {
+        return containerData.get(TANK_DATA_START + tank * TANK_DATA_STRIDE + 1);
+    }
+
+    /** Fluid registry id of the tank content, or -1 when empty. */
+    public int getTankFluidId(int tank) {
+        return containerData.get(TANK_DATA_START + tank * TANK_DATA_STRIDE + 2);
     }
 
     public int getProcessedAreaChunkCount() {

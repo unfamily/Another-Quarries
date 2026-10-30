@@ -21,6 +21,8 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
     public static final int PLAYER_SLOT_COUNT = 36;
 
     private final InteractionHand editHand;
+    /** True when editing the pump module drain list instead of the filter module destroy list. */
+    private final boolean pumpVariant;
     private final List<String> clientDestroyFilters = new ArrayList<>();
     private final ItemStackHandler copierHandler = new ItemStackHandler(1);
     private List<String> serverDraftLines;
@@ -37,6 +39,7 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
     public QuarryFilterModuleMenu(int containerId, Inventory playerInventory, InteractionHand editHand) {
         super(ModMenuTypes.QUARRY_FILTER_MODULE_MENU.get(), containerId);
         this.editHand = editHand;
+        this.pumpVariant = QuarryFilterModuleData.isPumpModule(playerInventory.player.getItemInHand(editHand));
         addCopierSlotIfNeeded();
         playerSlotStart = slots.size();
         addPlayerInventory(playerInventory);
@@ -50,12 +53,30 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
         return editHand;
     }
 
+    public boolean isPumpVariant() {
+        return pumpVariant;
+    }
+
     public static boolean isValidHandStack(Player player, InteractionHand hand) {
-        return QuarryFilterModuleData.isFilterModule(player.getItemInHand(hand));
+        return QuarryFilterModuleData.isListModule(player.getItemInHand(hand));
     }
 
     public int copySettingsSlotIndex() {
         return copySettingsSlotIndex;
+    }
+
+    /** Settings Copier currently in the GUI copy slot (empty if none placed). */
+    public ItemStack copierSlotStack() {
+        if (copySettingsSlotIndex < 0 || copySettingsSlotIndex >= slots.size()) {
+            return ItemStack.EMPTY;
+        }
+        return getSlot(copySettingsSlotIndex).getItem();
+    }
+
+    public void markCopierSlotChanged() {
+        if (copySettingsSlotIndex >= 0 && copySettingsSlotIndex < slots.size()) {
+            getSlot(copySettingsSlotIndex).setChanged();
+        }
     }
 
     public int playerSlotStart() {
@@ -79,7 +100,7 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
         while (serverDraftLines.size() <= index) {
             serverDraftLines.add("");
         }
-        serverDraftLines.set(index, QuarryFilterModuleData.draftLine(text));
+        serverDraftLines.set(index, QuarryFilterModuleData.draftLine(pumpVariant, text));
     }
 
     public void replaceServerDraft(List<String> lines) {
@@ -93,7 +114,7 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
 
     public List<String> getCompactServerDraft() {
         ensureServerDraft();
-        return QuarryFilterModuleData.compactDestroyList(serverDraftLines);
+        return QuarryFilterModuleData.compactList(pumpVariant, serverDraftLines);
     }
 
     private void ensureServerDraft() {
@@ -163,13 +184,22 @@ public class QuarryFilterModuleMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return isValidHandStack(player, editHand);
+        return isValidHandStack(player, editHand)
+                && QuarryFilterModuleData.isPumpModule(player.getItemInHand(editHand)) == pumpVariant;
     }
 
     @Override
     public void removed(Player player) {
         super.removed(player);
-        if (!player.level().isClientSide() && serverDraftLines != null && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+        if (player.level().isClientSide()) {
+            return;
+        }
+        ItemStack leftover = copierHandler.getStackInSlot(0);
+        if (!leftover.isEmpty()) {
+            player.getInventory().placeItemBackInInventory(leftover);
+            copierHandler.setStackInSlot(0, ItemStack.EMPTY);
+        }
+        if (serverDraftLines != null && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
             QuarryFilterModuleData.replaceAllInHand(serverPlayer, editHand, serverDraftLines);
         }
     }

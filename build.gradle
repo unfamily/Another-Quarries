@@ -121,19 +121,19 @@ configurations {
 }
 
 dependencies {
-    def iskaLibLocalJar = file('libs/iska_lib-1.7.0.0.1.jar')
+    def iskaLibLocalJar = file('libs/iska_lib-1.13.0.0.0.jar')
     def iskaLibUseLocal = project.findProperty('iskaLibUseLocal')?.toString()?.toBoolean() == true
     if (iskaLibUseLocal) {
         if (!iskaLibLocalJar.exists()) {
             throw new GradleException(
                     "Missing ${iskaLibLocalJar.name}. Build Iskandert-Library (./gradlew jar), " +
-                    "copy build/libs/iska_lib-1.7.0.0.1.jar into libs/.")
+                    "copy build/libs/iska_lib-1.13.0.0.0.jar into libs/.")
         }
         implementation files(iskaLibLocalJar)
         localRuntime files(iskaLibLocalJar)
     } else {
-        implementation "curse.maven:iskanderts-library-1516512:8195552"
-        localRuntime "curse.maven:iskanderts-library-1516512:8195552"
+        implementation "curse.maven:iskanderts-library-1516512:9358043"
+        localRuntime "curse.maven:iskanderts-library-1516512:9358043"
     }
 
     tasks.register('syncIskaLibToRunMods', Copy) {
@@ -148,6 +148,8 @@ dependencies {
 
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
     localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
+
+    implementation "curse.maven:another-config-manager-1719301:9018481"
 
     // Example mod dependency using a mod jar from ./libs with a flat dir repository
     // This maps to ./libs/coolmod-${mc_version}-${coolmod_version}.jar

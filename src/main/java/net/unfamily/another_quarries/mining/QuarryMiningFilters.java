@@ -56,7 +56,7 @@ public final class QuarryMiningFilters {
         }
         BlockState state = level.getBlockState(pos);
         if (state.getBlock() instanceof LiquidBlock) {
-            return false;
+            return isHandledFluidBlock(state);
         }
         if (!state.getFluidState().isEmpty() && state.canBeReplaced()) {
             return false;
@@ -75,6 +75,18 @@ public final class QuarryMiningFilters {
             return false;
         }
         return QuarryMiningLevels.isWithinMiningLevel(state, maxMiningLevel);
+    }
+
+    /** Source fluid blocks are targets only when the filter (void) or pump (drain) rules handle them. */
+    private static boolean isHandledFluidBlock(BlockState state) {
+        if (QuarryFluidMining.classifyFluidBlock(state, QuarryFluidMining.active()) == QuarryFluidRules.Action.NONE) {
+            return false;
+        }
+        Block block = state.getBlock();
+        if (matchesDenyList(block)) {
+            return false;
+        }
+        return !allowListActive || matchesAllowList(block);
     }
 
     private static boolean matchesDenyList(Block block) {

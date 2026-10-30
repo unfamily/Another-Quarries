@@ -8,20 +8,23 @@ import net.minecraft.nbt.StringTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.unfamily.another_quarries.config.ModConfig;
 import net.unfamily.another_quarries.item.QuarryFilterModuleData;
-import net.unfamily.another_quarries.mining.QuarryItemFilterMatcher;
+import net.unfamily.another_quarries.mining.QuarryFluidFilterMatcher;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 /**
  * Optional Settings Copier FILTER list snapshot import/export compatible with Another Dynamics.
  * External component ids: {@code another_dynamics:duct_face_settings}, {@code another_dynamics:settings_copier_filter}.
+ *
+ * <p>Like AD duct/sequential GUIs, copy/paste operate on the Settings Copier placed in the GUI copy slot
+ * — not a phantom inventory fallback. Quarry filter copies as {@code MaterialKind.ITEM} and pastes ITEM or FLUID;
+ * pump copies/pastes as {@code MaterialKind.FLUID} only.</p>
  */
 public final class QuarryFilterCopierCompat {
     private static final String AD_MOD_ID = "another_dynamics";
@@ -43,69 +46,74 @@ public final class QuarryFilterCopierCompat {
     /** {@code SettingsCopierStoreKind.FILTER} */
     private static final byte STORE_KIND_FILTER = 1;
     /** {@code FilterListMaterialKind.ITEM} */
-    private static final byte MATERIAL_KIND_ITEM = 1;
+    public static final byte MATERIAL_KIND_ITEM = 1;
+    /** {@code FilterListMaterialKind.FLUID} */
+    public static final byte MATERIAL_KIND_FLUID = 2;
+    /** {@code FilterListMaterialKind.NONE} / missing */
+    public static final byte MATERIAL_KIND_NONE = 0;
 
     private QuarryFilterCopierCompat() {}
 
-    public static boolean playerHoldsSettingsCopier(Player player) {
-        return findSettingsCopier(player) != null;
+    /**
+     * Whether {@code copier} (GUI copy-slot stack) can be pasted into the given list module
+     * (filter: ITEM or FLUID; pump: FLUID only).
+     */
+    public static boolean isCopierCompatibleWithModule(ItemStack copier, ItemStack listModule) {
+        if (copier == null || copier.isEmpty() || !QuarryFilterModuleData.isListModule(listModule)) {
+            return false;
+        }
+        if (!isCopierFilterListMode(copier)) {
+            return false;
+        }
+        byte kind = getMaterialKind(copier);
+        if (QuarryFilterModuleData.isPumpModule(listModule)) {
+            return kind == MATERIAL_KIND_FLUID;
+        }
+        return kind == MATERIAL_KIND_ITEM || kind == MATERIAL_KIND_FLUID;
     }
 
-    public static boolean isHeldCopierFilterListMode(Player player) {
-        ItemStack copier = findSettingsCopier(player);
-        return copier != null && isCopierFilterListMode(copier);
+    /** MaterialKind from a Settings Copier snapshot, or {@link #MATERIAL_KIND_NONE}. */
+    public static byte getMaterialKind(ItemStack copier) {
+        if (copier == null || copier.isEmpty()) {
+            return MATERIAL_KIND_NONE;
+        }
+        DataComponentType<CompoundTag> settingsType = settingsSnapshotComponentType();
+        if (settingsType == null || !copier.has(settingsType)) {
+            return MATERIAL_KIND_NONE;
+        }
+        return materialKindOf(copier.get(settingsType));
     }
 
-    public static CopyResult copyToCopier(ServerPlayer player, InteractionHand hand) {
+    public static CopyResult copyLinesToCopier(
+            ItemStack copier,
+            List<String> lines,
+            byte materialKind,
+            UnaryOperator<String> sanitizer,
+            String successKey) {
         if (!AnotherDynamicsIntegration.isLoaded()) {
             return CopyResult.failure("message.another_quarries.quarry.filter.copier.ad_missing");
         }
-        ItemStack filterModule = player.getItemInHand(hand);
-        if (!QuarryFilterModuleData.isFilterModule(filterModule)) {
-            return CopyResult.failure("message.another_quarries.quarry.filter.copier.missing");
-        }
-        return copyLinesToCopier(player, QuarryFilterModuleData.getDestroyList(filterModule));
-    }
-
-    public static CopyResult copyLinesToCopier(ServerPlayer player, List<String> lines) {
-        if (!AnotherDynamicsIntegration.isLoaded()) {
-            return CopyResult.failure("message.another_quarries.quarry.filter.copier.ad_missing");
-        }
-        ItemStack copier = findSettingsCopier(player);
-        if (copier == null) {
+        if (copier == null || copier.isEmpty() || !isSettingsCopierItem(copier)) {
             return CopyResult.failure("message.another_quarries.quarry.filter.copier.missing");
         }
         DataComponentType<CompoundTag> settingsType = settingsSnapshotComponentType();
         if (settingsType == null) {
             return CopyResult.failure("message.another_quarries.quarry.filter.copier.ad_missing");
         }
-        CompoundTag snapshot = buildFilterListSnapshot(lines);
+        CompoundTag snapshot = buildFilterListSnapshot(lines, materialKind, sanitizer);
         copier.set(settingsType, snapshot);
         DataComponentType<Boolean> filterFlag = copierFilterModeComponentType();
         if (filterFlag != null) {
             copier.set(filterFlag, true);
         }
-        return CopyResult.success("message.another_quarries.quarry.filter.copier.copied");
+        return CopyResult.success(successKey);
     }
 
-    public static PasteResult pasteFromCopier(ServerPlayer player, InteractionHand hand) {
-        if (!QuarryFilterModuleData.isFilterModule(player.getItemInHand(hand))) {
-            return PasteResult.failure("message.another_quarries.quarry.filter.copier.missing");
-        }
-        PasteResult read = readFilterLinesFromCopier(player);
-        if (!read.success()) {
-            return read;
-        }
-        QuarryFilterModuleData.replaceAllInHand(player, hand, read.lines());
-        return read;
-    }
-
-    public static PasteResult readFilterLinesFromCopier(ServerPlayer player) {
+    public static PasteResult readLinesFromCopier(ItemStack copier, boolean pump) {
         if (!AnotherDynamicsIntegration.isLoaded()) {
             return PasteResult.failure("message.another_quarries.quarry.filter.copier.ad_missing");
         }
-        ItemStack copier = findSettingsCopier(player);
-        if (copier == null) {
+        if (copier == null || copier.isEmpty() || !isSettingsCopierItem(copier)) {
             return PasteResult.failure("message.another_quarries.quarry.filter.copier.missing");
         }
         if (!isCopierFilterListMode(copier)) {
@@ -116,48 +124,39 @@ public final class QuarryFilterCopierCompat {
             return PasteResult.failure("message.another_quarries.quarry.filter.copier.empty");
         }
         CompoundTag snapshot = copier.get(settingsType);
-        if (!isItemFilterListSnapshot(snapshot)) {
+        if (!isFilterListSnapshot(snapshot)) {
             return PasteResult.failure("message.another_quarries.quarry.filter.copier.not_filter");
         }
-        List<String> imported = readLines(snapshot);
-        return PasteResult.success("message.another_quarries.quarry.filter.copier.pasted", imported.size(), imported);
-    }
-
-    /** First Settings Copier found in hands or inventory (client display fallback). */
-    public static ItemStack findHeldSettingsCopier(Player player) {
-        return findSettingsCopier(player);
-    }
-
-    private static ItemStack findSettingsCopier(Player player) {
-        for (InteractionHand hand : InteractionHand.values()) {
-            ItemStack stack = player.getItemInHand(hand);
-            if (isSettingsCopier(stack)) {
-                return stack;
+        byte kind = materialKindOf(snapshot);
+        if (pump) {
+            if (kind != MATERIAL_KIND_FLUID) {
+                return PasteResult.failure("message.another_quarries.quarry.pump.copier.not_fluid");
             }
+        } else if (kind != MATERIAL_KIND_ITEM && kind != MATERIAL_KIND_FLUID) {
+            return PasteResult.failure("message.another_quarries.quarry.filter.copier.not_filter");
         }
-        Inventory inv = player.getInventory();
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            ItemStack stack = inv.getItem(i);
-            if (isSettingsCopier(stack)) {
-                return stack;
-            }
-        }
-        return null;
+        UnaryOperator<String> sanitizer = pump
+                ? QuarryFluidFilterMatcher::sanitizeLine
+                : QuarryFilterModuleData::sanitizeDestroyLine;
+        List<String> imported = sanitizeImported(readLines(snapshot), sanitizer);
+        String successKey = pump
+                ? "message.another_quarries.quarry.pump.copier.pasted"
+                : "message.another_quarries.quarry.filter.copier.pasted";
+        return PasteResult.success(successKey, imported.size(), imported);
     }
 
     public static boolean isSettingsCopierItem(ItemStack stack) {
-        if (stack.isEmpty()) {
+        if (stack == null || stack.isEmpty()) {
             return false;
         }
         return SETTINGS_COPIER_ITEM_ID.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()));
     }
 
-    private static boolean isSettingsCopier(ItemStack stack) {
-        return isSettingsCopierItem(stack);
-    }
-
     /** True when copier is in single filter-list mode (not full node ALL mode). */
     public static boolean isCopierFilterListMode(ItemStack copier) {
+        if (copier == null || copier.isEmpty()) {
+            return false;
+        }
         DataComponentType<Boolean> filterFlag = copierFilterModeComponentType();
         if (filterFlag != null && copier.has(filterFlag)) {
             return Boolean.TRUE.equals(copier.get(filterFlag));
@@ -173,38 +172,26 @@ public final class QuarryFilterCopierCompat {
     }
 
     @SuppressWarnings("unchecked")
-    private static DataComponentType<CompoundTag> settingsSnapshotComponentType() {
+    private static @Nullable DataComponentType<CompoundTag> settingsSnapshotComponentType() {
         return BuiltInRegistries.DATA_COMPONENT_TYPE.get(AD_SETTINGS_SNAPSHOT_COMPONENT)
                 .map(holder -> (DataComponentType<CompoundTag>) holder.value())
                 .orElse(null);
     }
 
     @SuppressWarnings("unchecked")
-    private static DataComponentType<Boolean> copierFilterModeComponentType() {
+    private static @Nullable DataComponentType<Boolean> copierFilterModeComponentType() {
         return BuiltInRegistries.DATA_COMPONENT_TYPE.get(AD_COPIER_FILTER_MODE_COMPONENT)
                 .map(holder -> (DataComponentType<Boolean>) holder.value())
                 .orElse(null);
     }
 
-    private static CompoundTag buildFilterListSnapshot(List<String> lines) {
-        List<String> safe = new ArrayList<>();
-        int max = ModConfig.quarryFilterMaxLines();
-        for (String line : lines) {
-            if (line == null || line.isBlank()) {
-                continue;
-            }
-            String sanitized = QuarryItemFilterMatcher.sanitizeLine(line);
-            if (!sanitized.isEmpty()) {
-                safe.add(sanitized);
-            }
-            if (safe.size() >= max) {
-                break;
-            }
-        }
+    private static CompoundTag buildFilterListSnapshot(
+            List<String> lines, byte materialKind, UnaryOperator<String> sanitizer) {
+        List<String> safe = sanitizeImported(lines, sanitizer);
         CompoundTag root = new CompoundTag();
         root.putInt(KEY_FMT, FORMAT_VERSION);
         root.putByte(KEY_KIND, STORE_KIND_FILTER);
-        root.putByte(KEY_MATERIAL_KIND, MATERIAL_KIND_ITEM);
+        root.putByte(KEY_MATERIAL_KIND, materialKind);
         ListTag list = new ListTag();
         for (String line : safe) {
             list.add(StringTag.valueOf(line));
@@ -213,7 +200,25 @@ public final class QuarryFilterCopierCompat {
         return root;
     }
 
-    private static boolean isItemFilterListSnapshot(CompoundTag tag) {
+    private static List<String> sanitizeImported(List<String> lines, UnaryOperator<String> sanitizer) {
+        List<String> safe = new ArrayList<>();
+        int max = ModConfig.quarryFilterMaxLines();
+        for (String line : lines) {
+            if (line == null || line.isBlank()) {
+                continue;
+            }
+            String sanitized = sanitizer.apply(line);
+            if (!sanitized.isEmpty()) {
+                safe.add(sanitized);
+            }
+            if (safe.size() >= max) {
+                break;
+            }
+        }
+        return safe;
+    }
+
+    private static boolean isFilterListSnapshot(@Nullable CompoundTag tag) {
         if (tag == null || !tag.contains(KEY_FMT)) {
             return false;
         }
@@ -221,13 +226,15 @@ public final class QuarryFilterCopierCompat {
         if (fmt != FORMAT_VERSION && fmt != 2) {
             return false;
         }
-        if (!tag.contains(KEY_KIND) || tag.getByteOr(KEY_KIND, (byte) 0) != STORE_KIND_FILTER) {
-            return false;
+        return tag.contains(KEY_KIND) && tag.getByteOr(KEY_KIND, (byte) 0) == STORE_KIND_FILTER;
+    }
+
+    private static byte materialKindOf(@Nullable CompoundTag tag) {
+        if (tag == null || !tag.contains(KEY_MATERIAL_KIND)) {
+            // Legacy snapshots without MaterialKind are treated as ITEM.
+            return MATERIAL_KIND_ITEM;
         }
-        if (tag.contains(KEY_MATERIAL_KIND)) {
-            return tag.getByteOr(KEY_MATERIAL_KIND, (byte) 0) == MATERIAL_KIND_ITEM;
-        }
-        return true;
+        return tag.getByteOr(KEY_MATERIAL_KIND, MATERIAL_KIND_ITEM);
     }
 
     private static List<String> readLines(CompoundTag tag) {
