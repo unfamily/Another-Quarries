@@ -10,8 +10,8 @@ public final class QuarryFilterGuiSprites {
             ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/filter_entry_row.png");
     public static final ResourceLocation SINGLE_SLOT =
             ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/single_slot.png");
-    public static final ResourceLocation SCROLLBAR =
-            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/scrollbar.png");
+    public static final ResourceLocation SCROLLER =
+            ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/scroller.png");
     public static final ResourceLocation SINGLE_SLOT_COPY =
             ResourceLocation.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "textures/gui/single_slot_copy.png");
     public static final ResourceLocation FILTER_BACKGROUND =

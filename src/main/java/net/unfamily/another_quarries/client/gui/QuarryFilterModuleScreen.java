@@ -64,6 +64,8 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
     private Button closeButton;
     private Button filterHelpButton;
     private Button filterHelpBackButton;
+    private Button filterScrollUpButton;
+    private Button filterScrollDownButton;
     private Button settingsCopierSaveButton;
     private Button settingsCopierLoadButton;
     private final QuarryFilterHelpRenderer.Frame filterHelpFrame = new QuarryFilterHelpRenderer.Frame();
@@ -99,6 +101,20 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
                 .bounds(0, 0, QuarryFilterGuiLayout.ADVANCED_FILTER_BUTTON_WIDTH, QuarryFilterGuiLayout.BTN_H).build();
         filterHelpBackButton.visible = false;
         addRenderableWidget(filterHelpBackButton);
+
+        filterScrollUpButton = Button.builder(Component.literal("\u25b2"), b -> scrollFilterUp())
+                .bounds(leftPos + QuarryFilterGuiLayout.SCROLLBAR_X_REL, topPos + QuarryFilterGuiLayout.BUTTON_UP_Y_REL,
+                        QuarryFilterGuiLayout.SCROLL_ARROW, QuarryFilterGuiLayout.SCROLL_ARROW)
+                .build();
+        filterScrollUpButton.visible = false;
+        addRenderableWidget(filterScrollUpButton);
+
+        filterScrollDownButton = Button.builder(Component.literal("\u25bc"), b -> scrollFilterDown())
+                .bounds(leftPos + QuarryFilterGuiLayout.SCROLLBAR_X_REL, topPos + QuarryFilterGuiLayout.BUTTON_DOWN_Y_REL,
+                        QuarryFilterGuiLayout.SCROLL_ARROW, QuarryFilterGuiLayout.SCROLL_ARROW)
+                .build();
+        filterScrollDownButton.visible = false;
+        addRenderableWidget(filterScrollDownButton);
 
         settingsCopierSaveButton = Button.builder(Component.translatable("gui.another_quarries.quarry.filter.copier.copy"), b -> sendFilterCopyToCopier())
                 .bounds(0, 0, 18, QuarryFilterGuiLayout.COPIER_ACTION_BUTTON_H)
@@ -268,10 +284,6 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         }
         if (subView == SubView.DESTROY_FILTERS && !inFilterEditMode()) {
             int maxLines = ModConfig.quarryFilterMaxLines();
-            if (filterScrollbar.handleScrollButtonClick(mouseX, mouseY, leftPos, topPos, maxLines, filterScrollOffset,
-                    this::setFilterScrollOffsetWithSound)) {
-                return true;
-            }
             if (filterScrollbar.handleHandleClick(mouseX, mouseY, leftPos, topPos, maxLines, filterScrollOffset)) {
                 return true;
             }
@@ -401,9 +413,36 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         setVisible(filterEditClearButton, showEditChrome);
         setVisible(filterEditCloseButton, showEditChrome);
         setVisible(filterHelpBackButton, help);
+        refreshFilterScrollArrowVisibility();
         menu.setInventoryInteractionBlocked(help);
         updateCopierPasteButtonState();
         layoutFilterWidgets();
+    }
+
+    private void refreshFilterScrollArrowVisibility() {
+        boolean show = subView == SubView.DESTROY_FILTERS
+                && !inFilterEditMode()
+                && ModConfig.quarryFilterMaxLines() > QuarryFilterGuiLayout.VISIBLE_FILTER_ENTRIES;
+        if (filterScrollUpButton != null) {
+            filterScrollUpButton.visible = show;
+            filterScrollUpButton.active = show && filterScrollOffset > 0;
+            filterScrollUpButton.setPosition(
+                    leftPos + QuarryFilterGuiLayout.SCROLLBAR_X_REL, topPos + QuarryFilterGuiLayout.BUTTON_UP_Y_REL);
+        }
+        if (filterScrollDownButton != null) {
+            filterScrollDownButton.visible = show;
+            filterScrollDownButton.active = show && filterScrollOffset < maxFilterScroll();
+            filterScrollDownButton.setPosition(
+                    leftPos + QuarryFilterGuiLayout.SCROLLBAR_X_REL, topPos + QuarryFilterGuiLayout.BUTTON_DOWN_Y_REL);
+        }
+    }
+
+    private void scrollFilterUp() {
+        setFilterScrollOffsetWithSound(filterScrollOffset - 1);
+    }
+
+    private void scrollFilterDown() {
+        setFilterScrollOffsetWithSound(filterScrollOffset + 1);
     }
 
     private void updateCopierPasteButtonState() {
@@ -709,6 +748,7 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
         layoutHelpBackButton();
         layoutFilterEditWidgets();
         layoutCopierButtons();
+        refreshFilterScrollArrowVisibility();
     }
 
     private void layoutHelpBackButton() {
@@ -801,36 +841,30 @@ public class QuarryFilterModuleScreen extends AbstractContainerScreen<QuarryFilt
             guiGraphics.drawString(font, Component.literal(displayText), textX, textY,
                     QuarryFilterGuiLayout.FILTER_ENTRY_TEXT_COLOR, false);
         }
-        if (maxLines > QuarryFilterGuiLayout.VISIBLE_FILTER_ENTRIES) {
+        if (maxLines > QuarryFilterGuiLayout.VISIBLE_FILTER_ENTRIES && !inFilterEditMode()) {
             int scrollbarX = leftPos + QuarryFilterGuiLayout.SCROLLBAR_X_REL;
-            int buttonUpY = topPos + QuarryFilterGuiLayout.BUTTON_UP_Y_REL;
             int scrollbarY = topPos + QuarryFilterGuiLayout.SCROLLBAR_Y_REL;
-            int buttonDownY = topPos + QuarryFilterGuiLayout.BUTTON_DOWN_Y_REL;
-            guiGraphics.blit(QuarryFilterGuiSprites.SCROLLBAR, scrollbarX, scrollbarY, 0.0F, 0.0F,
-                    QuarryFilterGuiLayout.SCROLLBAR_WIDTH, QuarryFilterGuiLayout.SCROLLBAR_HEIGHT,
-                    QuarryFilterGuiLayout.SCROLLBAR_TEXTURE_WIDTH, QuarryFilterGuiLayout.SCROLLBAR_TEXTURE_HEIGHT);
-            int upV = mouseX >= scrollbarX && mouseX < scrollbarX + QuarryFilterGuiLayout.SCROLLBAR_WIDTH
-                    && mouseY >= buttonUpY && mouseY < buttonUpY + QuarryFilterGuiLayout.HANDLE_SIZE ? QuarryFilterGuiLayout.HANDLE_SIZE : 0;
-            guiGraphics.blit(QuarryFilterGuiSprites.SCROLLBAR, scrollbarX, buttonUpY,
-                    (float) (QuarryFilterGuiLayout.SCROLLBAR_WIDTH * 2), (float) upV,
-                    QuarryFilterGuiLayout.HANDLE_SIZE, QuarryFilterGuiLayout.HANDLE_SIZE,
-                    QuarryFilterGuiLayout.SCROLLBAR_TEXTURE_WIDTH, QuarryFilterGuiLayout.SCROLLBAR_TEXTURE_HEIGHT);
-            int downV = mouseX >= scrollbarX && mouseX < scrollbarX + QuarryFilterGuiLayout.SCROLLBAR_WIDTH
-                    && mouseY >= buttonDownY && mouseY < buttonDownY + QuarryFilterGuiLayout.HANDLE_SIZE ? QuarryFilterGuiLayout.HANDLE_SIZE : 0;
-            guiGraphics.blit(QuarryFilterGuiSprites.SCROLLBAR, scrollbarX, buttonDownY,
-                    (float) (QuarryFilterGuiLayout.SCROLLBAR_WIDTH * 3), (float) downV,
-                    QuarryFilterGuiLayout.HANDLE_SIZE, QuarryFilterGuiLayout.HANDLE_SIZE,
-                    QuarryFilterGuiLayout.SCROLLBAR_TEXTURE_WIDTH, QuarryFilterGuiLayout.SCROLLBAR_TEXTURE_HEIGHT);
+            guiGraphics.fill(
+                    scrollbarX,
+                    scrollbarY,
+                    scrollbarX + QuarryFilterGuiLayout.SCROLLER_WIDTH,
+                    scrollbarY + QuarryFilterGuiLayout.SCROLLBAR_HEIGHT,
+                    QuarryFilterGuiLayout.SCROLL_TRACK_COLOR);
             int maxScroll = maxFilterScroll();
             if (maxScroll > 0) {
                 double ratio = (double) filterScrollOffset / maxScroll;
-                int handleY = scrollbarY + (int) (ratio * (QuarryFilterGuiLayout.SCROLLBAR_HEIGHT - QuarryFilterGuiLayout.HANDLE_SIZE));
-                int hV = mouseX >= scrollbarX && mouseX < scrollbarX + QuarryFilterGuiLayout.HANDLE_SIZE
-                        && mouseY >= handleY && mouseY < handleY + QuarryFilterGuiLayout.HANDLE_SIZE ? QuarryFilterGuiLayout.HANDLE_SIZE : 0;
-                guiGraphics.blit(QuarryFilterGuiSprites.SCROLLBAR, scrollbarX, handleY,
-                        (float) QuarryFilterGuiLayout.SCROLLBAR_WIDTH, (float) hV,
-                        QuarryFilterGuiLayout.HANDLE_SIZE, QuarryFilterGuiLayout.HANDLE_SIZE,
-                        QuarryFilterGuiLayout.SCROLLBAR_TEXTURE_WIDTH, QuarryFilterGuiLayout.SCROLLBAR_TEXTURE_HEIGHT);
+                int handleRange = Math.max(0, QuarryFilterGuiLayout.SCROLLBAR_HEIGHT - QuarryFilterGuiLayout.SCROLLER_HEIGHT);
+                int handleY = scrollbarY + (int) (ratio * handleRange);
+                guiGraphics.blit(
+                        QuarryFilterGuiSprites.SCROLLER,
+                        scrollbarX,
+                        handleY,
+                        0.0F,
+                        0.0F,
+                        QuarryFilterGuiLayout.SCROLLER_WIDTH,
+                        QuarryFilterGuiLayout.SCROLLER_HEIGHT,
+                        QuarryFilterGuiLayout.SCROLLER_WIDTH,
+                        QuarryFilterGuiLayout.SCROLLER_HEIGHT);
             }
         }
     }

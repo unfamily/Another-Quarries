@@ -27,7 +27,6 @@ public final class QuarryFilterVariants {
             return variants;
         }
         variants.add("-" + itemId);
-        variants.add("@" + itemId.getNamespace());
         Item item = stack.getItem();
         Holder<Item> holder = BuiltInRegistries.ITEM.wrapAsHolder(item);
         holder.tags()
@@ -35,6 +34,7 @@ public final class QuarryFilterVariants {
                 .map(ResourceLocation::toString)
                 .sorted()
                 .forEach(tagId -> variants.add("#" + tagId));
+        variants.add("@" + itemId.getNamespace());
         if (stack.isEnchanted() || stack.is(Items.ENCHANTED_BOOK)) {
             variants.add("&enchanted");
         }
