@@ -35,6 +35,7 @@ public final class AnotherQuarriesClient {
     static void onRegisterMenuScreens(RegisterMenuScreensEvent event) {
         event.register(ModMenuTypes.QUARRY_MENU.get(), QuarryScreen::new);
         event.register(ModMenuTypes.QUARRY_FILTER_MODULE_MENU.get(), QuarryFilterModuleScreen::new);
+        net.unfamily.another_quarries.client.QuarryFramePreviewClientHooks.registerIfNeeded();
     }
 
     @SubscribeEvent
